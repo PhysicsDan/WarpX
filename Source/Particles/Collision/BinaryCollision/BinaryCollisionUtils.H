@@ -16,6 +16,8 @@
 #include <AMReX_Math.H>
 #include <AMReX_Vector.H>
 
+#include <array>
+
 enum struct CollisionType { DeuteriumTritiumToNeutronHeliumFusion,
                             DeuteriumDeuteriumToProtonTritiumFusion,
                             DeuteriumDeuteriumToNeutronHeliumFusion,
@@ -23,6 +25,7 @@ enum struct CollisionType { DeuteriumTritiumToNeutronHeliumFusion,
                             ProtonBoronToAlphasFusion,
                             Bremsstrahlung,
                             DSMC,
+                            ElectronImpactIonization,
                             PairwiseCoulomb,
                             LinearBreitWheeler,
                             LinearCompton,
@@ -47,6 +50,25 @@ namespace BinaryCollisionUtils{
 
     CollisionType get_collision_type (const std::string& collision_name,
                                       MultiParticleContainer const * mypc);
+
+    /**
+     * \brief For an ``electron_impact_ionization`` collision, return the names of the
+     * species involved, after checking that they are consistent with this collision type.
+     *
+     * The two species in ``<collision_name>.species`` can be given in any order: one must be
+     * an electron species, and the other an ion species with ``do_field_ionization = 1``
+     * (which provides the ionization level of the ions and their element).
+     * The ejected electrons are added to ``<collision_name>.product_species`` if it is
+     * specified, and to the ``ionization_product_species`` of the ion species otherwise.
+     *
+     * @param[in] collision_name the name of the collision
+     * @param[in] mypc pointer to the MultiParticleContainer
+     * @return the names of the incident electron species, of the target ion species,
+     * and of the species to which the ejected electrons are added, in that order
+     */
+    std::array<std::string, 3>
+    get_electron_impact_ionization_species (const std::string& collision_name,
+                                            MultiParticleContainer const * mypc);
 
     /**
      * \brief Parse the list of scattering processes of a ``dsmc`` or ``background_mcc``

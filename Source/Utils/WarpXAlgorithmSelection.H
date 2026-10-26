@@ -204,6 +204,14 @@ AMREX_ENUM(ScatteringAngleModel,
            Default = Isotropic  /**< Isotropic */
 );
 
+/** \brief For electron-impact ionization, the model used to determine the kinetic energy of
+ *  the ejected electron in the rest frame of the ion */
+AMREX_ENUM(EjectedElectronEnergyModel,
+           BinaryEncounter, /**< Energy sampled from the binary-encounter distribution */
+           AtRest,          /**< The ejected electron is created at rest */
+           Default = BinaryEncounter
+);
+
 /** \brief Format of the Legendre coefficients used for anisotropic fusion angular distributions */
 AMREX_ENUM(
     FusionAngularDistributionCoefficientsFormat,

@@ -3418,6 +3418,57 @@ class InverseBremsstrahlungCollisions(CollisionBase):
         collision.start_step = self.start_step
 
 
+class ElectronImpactIonizationCollisions(CollisionBase):
+    """
+    Custom class to handle setup of electron-impact (collisional) ionization in WarpX.
+    The ion species must have field ionization enabled (see :py:class:`FieldIonization`),
+    which defines the element and the ionization level of the ions. If collision
+    initialization is added to picmistandard this can be changed to inherit that functionality.
+    """
+
+    species: list[Species] = Field(
+        min_length=2,
+        max_length=2,
+        description="The species involved in the collision. Must be of length 2: an electron species and an ion species with field ionization enabled, in any order.",
+    )
+    product_species: Species | None = Field(
+        default=None,
+        description="The electron species in which the ejected electrons are created. If not specified, the product species of the field ionization of the ions is used.",
+    )
+    ejected_electron_energy_model: Literal["binary_encounter", "at_rest"] | None = (
+        Field(
+            default=None,
+            description="The model for the kinetic energy of the ejected electrons, in the rest frame of the ions. Default is 'binary_encounter'.",
+        )
+    )
+    ndt_supercycle: int | None = Field(
+        default=None,
+        ge=1,
+        description="Run collision once every ndt_supercycle PIC time steps (dt_collision = ndt_supercycle * dt_PIC). Mutually exclusive with ndt_subcycle. Default is 1.",
+    )
+    ndt_subcycle: int | None = Field(
+        default=None,
+        ge=1,
+        description="Run collision ndt_subcycle times per PIC time step (dt_collision = dt_PIC / ndt_subcycle). Mutually exclusive with ndt_supercycle.",
+    )
+    start_step: int | None = Field(
+        default=None,
+        ge=0,
+        description="First PIC time step on which the collision is applied. With ndt_supercycle, this acts as an offset: the collision runs on steps start_step, start_step + ndt_supercycle, start_step + 2*ndt_supercycle, ... Default is 0.",
+    )
+
+    def collision_initialize_inputs(self):
+        collision = pywarpx.Collisions.newcollision(self.name)
+        collision.type = "electron_impact_ionization"
+        collision.species = [species.name for species in self.species]
+        if self.product_species is not None:
+            collision.product_species = [self.product_species.name]
+        collision.ejected_electron_energy_model = self.ejected_electron_energy_model
+        collision.ndt_supercycle = self.ndt_supercycle
+        collision.ndt_subcycle = self.ndt_subcycle
+        collision.start_step = self.start_step
+
+
 class EmbeddedBoundary(
     picmistandard.PICMI_Extension, picmistandard.PICMI_ExpressionParameters
 ):

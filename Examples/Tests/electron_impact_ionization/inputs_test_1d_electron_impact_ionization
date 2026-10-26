@@ -1,0 +1,112 @@
+# In this test, a uniform beam of 1 keV electrons goes through a much less dense
+# gas of neutral carbon atoms, which are progressively ionized by electron impact.
+# Since the density of carbon is much lower than that of the beam, the energy of the
+# beam remains nearly constant, and the ionization rate of carbon ions with charge
+# state j is n_e * sigma_j * v_e.
+# In the analysis script, we check that the populations of the charge states of carbon
+# are consistent with these rates, and that the charge, energy and momentum are conserved.
+# Since the plasma is uniform and the fields are not evolved, the particles are not pushed.
+
+#################################
+########## CONSTANTS ############
+#################################
+
+my_constants.n_e = 1.e28            # beam density [m^-3]
+my_constants.n_i = 1.e25            # carbon density [m^-3]
+my_constants.E_beam = 1.e3          # beam kinetic energy [eV]
+my_constants.m_e_eV = m_e*clight**2/q_e
+my_constants.gamma_beam = 1. + E_beam/m_e_eV
+my_constants.gamma_beta_beam = sqrt(gamma_beam**2 - 1.)
+
+#################################
+####### GENERAL PARAMETERS ######
+#################################
+max_step = 1000
+amr.n_cell = 32
+amr.max_grid_size = 32
+amr.max_level = 0
+geometry.dims = 1
+geometry.prob_lo = 0.
+geometry.prob_hi = 1.e-6
+
+#################################
+###### Boundary Condition #######
+#################################
+boundary.field_lo = periodic
+boundary.field_hi = periodic
+boundary.particle_lo = periodic
+boundary.particle_hi = periodic
+
+#################################
+############ NUMERICS ###########
+#################################
+warpx.serialize_initial_conditions = 1
+warpx.verbose = 1
+warpx.const_dt = 5.e-17
+warpx.use_filter = 0
+
+# Do not evolve the E and B fields
+algo.maxwell_solver = none
+
+# Order of particle shape factors
+algo.particle_shape = 1
+
+#################################
+############ PLASMA #############
+#################################
+particles.species_names = electrons carbon ejected_electrons
+
+electrons.species_type = electron
+electrons.injection_style = "NUniformPerCell"
+electrons.num_particles_per_cell_each_dim = 128
+electrons.profile = constant
+electrons.density = n_e
+electrons.momentum_distribution_type = constant
+electrons.uz = gamma_beta_beam
+electrons.do_not_deposit = 1
+electrons.do_not_push = 1
+
+carbon.species_type = carbon
+carbon.injection_style = "NUniformPerCell"
+carbon.num_particles_per_cell_each_dim = 256
+carbon.profile = constant
+carbon.density = n_i
+carbon.momentum_distribution_type = at_rest
+carbon.do_field_ionization = 1
+carbon.physical_element = C
+carbon.ionization_initial_level = 0
+carbon.ionization_product_species = ejected_electrons
+carbon.do_not_deposit = 1
+carbon.do_not_push = 1
+
+ejected_electrons.species_type = electron
+ejected_electrons.injection_style = none
+ejected_electrons.do_not_deposit = 1
+ejected_electrons.do_not_push = 1
+
+#################################
+############ COLLISION ##########
+#################################
+collisions.collision_names = ionization
+ionization.type = electron_impact_ionization
+ionization.species = electrons carbon
+ionization.product_species = ejected_electrons
+
+#################################
+########## DIAGNOSTICS ##########
+#################################
+diagnostics.diags_names = diag1
+diag1.intervals = 200
+diag1.diag_type = Full
+diag1.fields_to_plot = none
+
+warpx.reduced_diags_names = particle_energy particle_momentum particle_number
+particle_energy.type = ParticleEnergy
+particle_energy.intervals = 200
+particle_energy.precision = 18
+particle_momentum.type = ParticleMomentum
+particle_momentum.intervals = 200
+particle_momentum.precision = 18
+particle_number.type = ParticleNumber
+particle_number.intervals = 200
+particle_number.precision = 18

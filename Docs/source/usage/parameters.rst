@@ -2264,6 +2264,9 @@ Particle initialization
     :optional:
 
     Do field ionization for this species (using the ADK theory).
+    This must also be enabled for the ion species of an ``electron_impact_ionization`` collision
+    (see :pp:param:`<collision_name>.type`), which uses the ionization level and the
+    physical element of the ions.
 
 .. pp:param:: <species_name>.do_adk_correction
     :type: ``0`` or ``1``
@@ -3169,6 +3172,13 @@ Details about the collision models can be found in the :ref:`theory section <mul
       :pp:param:`<collision_name>.ndt_subcycle` options still apply.
     - ``bremsstrahlung`` for slowing of electrons due to Bremsstrahlung collisions with ions.
       This uses the cross sections as given by `Seltzer and Berger <https://doi.org/10.1016/0092-640X(86)90014-8>`__.
+    - ``electron_impact_ionization`` for the ionization of ions by collisions with electrons (collisional ionization).
+      The ionization cross section of each charge state is computed with the empirical formula of
+      :cite:t:`param-LotzZPhys1967` (extended to relativistic electrons),
+      and the ionization events are computed with the pair-wise algorithm of :cite:t:`param-HigginsonJCP2019`.
+      The ion species must have :pp:param:`<species_name>.do_field_ionization` set to ``1``,
+      which defines the ionization level of the ions and their physical element.
+      See :ref:`Electron-impact ionization section <multiphysics-collisions-electron-impact-ionization>`.
     - ``inverse_bremsstrahlung`` for inverse bremstrahlung absorption of photons from the collisions of electrons and ions.
       The absorbed energy and momentum from the photons is distributed among the electrons in the cell so that the quantities are exactly conserved.
     - ``linear_breit_wheeler`` for electron-positron pair creation from the annihilation of two photons, according to the linear Breit-Wheeler mechanism
@@ -3202,6 +3212,8 @@ Details about the collision models can be found in the :ref:`theory section <mul
     In these four cases, only one species name should be given.
     If using ``linear_breit_wheeler`` these should be two photon species.
     If using ``linear_compton``, these should be two species: first, a photon species, and second, a lepton species, in this exact order.
+    If using ``electron_impact_ionization``, these should be two species, in any order: an electron species
+    and an ion species with :pp:param:`<species_name>.do_field_ionization` set to ``1``.
     If using two-product ``nuclearfusion`` with ``scattering_angle_model = legendre``, consider the reaction to be ordered as ``A + B -> C + D``.
     The first entry in ``species`` must be the incident reactant ``A``, and the second must be the target reactant ``B``.
     The scattering angle is measured between the momenta of ``A`` and ``C`` in the center-of-momentum frame.
@@ -3210,9 +3222,12 @@ Details about the collision models can be found in the :ref:`theory section <mul
 .. pp:param:: <collision_name>.product_species
     :type: ``strings``
 
-    Only for ``dsmc``, ``linear_breit_wheeler``, ``nuclearfusion``, and ``bremsstrahlung``.
+    Only for ``dsmc``, ``linear_breit_wheeler``, ``nuclearfusion``, ``bremsstrahlung``, and ``electron_impact_ionization``.
     The name(s) of the species in which to add the new macroparticles created by the reaction.
     If using ``dsmc`` with ionization reactions, the first species in this list must be an electron.
+    If using ``electron_impact_ionization``, this should be the electron species in which the ejected electrons are created
+    (optional; by default, the :pp:param:`<species_name>.ionization_product_species` of the ion species).
+    The scattered electrons and the ionized ions are added to the colliding electron and ion species, respectively.
     If using ``dsmc`` with ``charge_exchange`` and ``two_product_reaction``, the order of the ``product_species`` should match the order of the species in :pp:param:`<collision_name>.species`.
     If using ``linear_breit_wheeler`` these should be two species: one of electrons and one of positrons.
     If using ``bremsstrahlung``, the product species must be of type photon.
@@ -3563,6 +3578,23 @@ Details about the collision models can be found in the :ref:`theory section <mul
 
     Only for ``bremsstrahlung``. Minimum energy of the photons created.
     This is relative to the electron energy, defaulting to 1.e-4.
+
+.. pp:param:: <collision_name>.ejected_electron_energy_model
+    :type: ``string``
+    :default: ``binary_encounter``
+    :optional:
+
+    Only for ``electron_impact_ionization``. The model for the kinetic energy of the electrons
+    ejected by the ionization events, in the rest frame of the ions.
+    The possible values are ``binary_encounter`` and ``at_rest``.
+    With ``binary_encounter``, the energy :math:`W` transferred from the incident electron to the
+    ejected electron (including the ionization energy :math:`I`) is sampled from the
+    binary-encounter distribution :math:`dP/dW \propto 1/W^2`, for :math:`I \leq W \leq (E + I)/2`,
+    where :math:`E` is the kinetic energy of the incident electron.
+    With ``at_rest``, the ejected electrons are created at rest, and the incident electrons only
+    lose the ionization energy.
+    See the :ref:`Electron-impact ionization section <multiphysics-collisions-electron-impact-ionization>`
+    for more details.
 
 .. pp:param:: collisions.correct_energy_momentum
     :type: ``bool``

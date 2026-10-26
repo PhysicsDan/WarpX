@@ -12,12 +12,16 @@
 #include "Particles/WarpXParticleContainer.H"
 #include "Utils/Parser/ParserUtils.H"
 #include "Utils/WarpXAlgorithmSelection.H"
+#include "Utils/WarpXConst.H"
 
 #include <AMReX_ParmParse.H>
 #include <AMReX_Vector.H>
 
+#include <array>
+#include <cmath>
 #include <string>
 #include <sstream>
+#include <utility>
 
 #include "Utils/TextMsg.H"
 
@@ -44,6 +48,11 @@ namespace BinaryCollisionUtils{
         }
         else if (type == "dsmc") {
             return CollisionType::DSMC;
+        }
+        else if (type == "electron_impact_ionization") {
+            // Check that the species are consistent with this collision type
+            get_electron_impact_ionization_species(collision_name, mypc);
+            return CollisionType::ElectronImpactIonization;
         }
         else if (type == "linear_breit_wheeler") {
             amrex::Vector<std::string> species_name;
@@ -102,6 +111,68 @@ namespace BinaryCollisionUtils{
             return CollisionType::LinearCompton;
         }
         return CollisionType::Undefined;
+    }
+
+    std::array<std::string, 3>
+    get_electron_impact_ionization_species (const std::string& collision_name,
+                                            MultiParticleContainer const * const mypc)
+    {
+        // A species is considered to be an electron species if it was defined with
+        // `species_type = electron`, or if it has the charge and mass of an electron
+        auto const is_electron_species = [] (WarpXParticleContainer const& species) {
+            return species.AmIA<PhysicalSpecies::electron>() ||
+                (std::abs(species.getCharge() + PhysConst::q_e) <= 1.e-6_prt*PhysConst::q_e &&
+                 std::abs(species.getMass() - PhysConst::m_e) <= 1.e-6_prt*PhysConst::m_e);
+        };
+
+        const amrex::ParmParse pp_collision_name(collision_name);
+        amrex::Vector<std::string> species_names;
+        pp_collision_name.getarr("species", species_names);
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+            species_names.size() == 2u,
+            "Electron-impact ionization collision " + collision_name +
+            " must involve exactly two species: an electron species and an ion species");
+
+        // Identify the target ion species: this is the species that carries an ionization level
+        std::string electron_species_name = species_names[0];
+        std::string ion_species_name = species_names[1];
+        if (mypc->GetParticleContainerFromName(electron_species_name).DoFieldIonization()) {
+            std::swap(electron_species_name, ion_species_name);
+        }
+        auto const& electron_species = mypc->GetParticleContainerFromName(electron_species_name);
+        auto const& ion_species = mypc->GetParticleContainerFromName(ion_species_name);
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+            ion_species.DoFieldIonization() && !electron_species.DoFieldIonization(),
+            "Electron-impact ionization collision " + collision_name +
+            ": exactly one of the two species must be an ion species with "
+            "<species_name>.do_field_ionization = 1, which defines its element "
+            "and its ionization level");
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+            is_electron_species(electron_species),
+            "Electron-impact ionization collision " + collision_name +
+            ": the species " + electron_species_name + " must be an electron species");
+
+        // The ejected electrons are added to the product species if specified,
+        // and otherwise to the product species of the field ionization of the ions
+        amrex::Vector<std::string> product_species_names;
+        pp_collision_name.queryarr("product_species", product_species_names);
+        std::string product_species_name;
+        if (product_species_names.empty()) {
+            const amrex::ParmParse pp_ion_species_name(ion_species_name);
+            pp_ion_species_name.get("ionization_product_species", product_species_name);
+        } else {
+            WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+                product_species_names.size() == 1u,
+                "Electron-impact ionization collision " + collision_name +
+                " must have exactly one product species, for the ejected electrons");
+            product_species_name = product_species_names[0];
+        }
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
+            is_electron_species(mypc->GetParticleContainerFromName(product_species_name)),
+            "Electron-impact ionization collision " + collision_name +
+            ": the product species " + product_species_name + " must be an electron species");
+
+        return {electron_species_name, ion_species_name, product_species_name};
     }
 
     amrex::Vector<ScatteringProcess>
