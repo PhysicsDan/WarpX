@@ -9,7 +9,6 @@
 
 #include "ElectronImpactIonizationCrossSection.H"
 
-#include "Particles/Algorithms/KineticEnergy.H"
 #include "Utils/ParticleUtils.H"
 #include "Utils/WarpXAlgorithmSelection.H"
 #include "Utils/WarpXConst.H"
@@ -24,119 +23,195 @@
  * \brief Computes the momenta of the particles that result from the ionization of an ion
  * by an incident electron: the scattered incident electron, the ion and the ejected electron.
  *
- * The calculation is done in the rest frame of the ion. In this frame, the incident electron
- * loses the ionization energy of the ion plus the kinetic energy given to the ejected electron,
- * which is either zero or sampled from the binary-encounter distribution, depending on
- * ejected_electron_energy_model. The scattered electron keeps the direction of the incident
- * electron, while the ejected electron is emitted isotropically. The ion recoils such that the
- * momentum is conserved, and its (small) recoil energy is subtracted from the energy of the
- * scattered electron, so that the kinetic energy minus the ionization energy is conserved.
+ * The calculation is done in the rest frame of the ion. The ionized subshell is selected
+ * with a probability proportional to its contribution to the cross section, and the momentum of
+ * the ejected electron is sampled with ElectronImpactIonization::SampleEjectedElectron.
+ * The incident electron loses the binding energy of the subshell plus the kinetic energy of the
+ * ejected electron. In a close (binary) collision, the scattered electron is deflected such that
+ * the momentum of the two electrons is conserved, while in a distant collision it keeps its
+ * direction. The ion recoils such that the momentum is conserved exactly, and its (small)
+ * recoil energy is taken from the scattered electron, so that the kinetic energy decreases
+ * exactly by the binding energy of the subshell.
  *
+ * @param[in] atomic_data atomic data of the element of the ion
+ * @param[in] charge_state charge state (ionization level) of the ion before the event
  * @param[in] u1x_in,u1y_in,u1z_in momentum per unit mass (gamma*v) of the incident electron
  * @param[in] u2x_in,u2y_in,u2z_in momentum per unit mass (gamma*v) of the ion
  * @param[in] m1,m2 masses of the electrons and of the ion
- * @param[in] ionization_energy ionization energy of the ion [J]
- * @param[in] ejected_electron_energy_model model for the energy of the ejected electron
+ * @param[in] energy_model model for the kinetic energy of the ejected electron
  * @param[out] u1x_out,u1y_out,u1z_out momentum per unit mass of the scattered electron
  * @param[out] u2x_out,u2y_out,u2z_out momentum per unit mass of the ion
  * @param[out] u3x_out,u3y_out,u3z_out momentum per unit mass of the ejected electron
+ * @param[out] binding_energy binding energy of the ionized subshell [eV]
  * @param[in] engine the random engine
+ * \return whether the incident electron has enough energy to ionize the ion. This can only be
+ *         false because of round-off errors, for an incident electron at the ionization
+ *         threshold. In that case, the ion keeps its momentum and the two electrons are at rest
+ *         in the rest frame of the ion, i.e. the kinetic energy of the incident electron, which
+ *         is approximately the ionization energy, is used to ionize the ion.
  */
 AMREX_GPU_HOST_DEVICE AMREX_INLINE
-void ElectronImpactIonizationInitializeMomentum (
+bool ElectronImpactIonizationInitializeMomentum (
+    ElectronImpactIonization::AtomicData const& atomic_data, int const charge_state,
     amrex::ParticleReal const u1x_in, amrex::ParticleReal const u1y_in,
     amrex::ParticleReal const u1z_in,
     amrex::ParticleReal const u2x_in, amrex::ParticleReal const u2y_in,
     amrex::ParticleReal const u2z_in,
     amrex::ParticleReal const m1, amrex::ParticleReal const m2,
-    amrex::ParticleReal const ionization_energy,
-    EjectedElectronEnergyModel const ejected_electron_energy_model,
+    EjectedElectronEnergyModel const energy_model,
     amrex::ParticleReal& u1x_out, amrex::ParticleReal& u1y_out, amrex::ParticleReal& u1z_out,
     amrex::ParticleReal& u2x_out, amrex::ParticleReal& u2y_out, amrex::ParticleReal& u2z_out,
     amrex::ParticleReal& u3x_out, amrex::ParticleReal& u3y_out, amrex::ParticleReal& u3z_out,
+    double& binding_energy,
     amrex::RandomEngine const& engine)
 {
+    using ElectronImpactIonization::m_e_c2_eV;
     constexpr auto c = PhysConst::c_v<double>;
-    constexpr auto c2 = PhysConst::c2_v<double>;
-    auto const m1_d = static_cast<double>(m1);
-    auto const m2_d = static_cast<double>(m2);
 
-    // Transform the incident electron to the rest frame of the ion
+    // Transform the incident electron to the rest frame of the ion, and normalize its
+    // momentum by m_e c
     amrex::ParticleReal ux = u1x_in;
     amrex::ParticleReal uy = u1y_in;
     amrex::ParticleReal uz = u1z_in;
     ParticleUtils::doLorentzTransformWithU(ux, uy, uz, u2x_in, u2y_in, u2z_in);
-    auto const ux_d = static_cast<double>(ux);
-    auto const uy_d = static_cast<double>(uy);
-    auto const uz_d = static_cast<double>(uz);
-    double const u_sq = ux_d*ux_d + uy_d*uy_d + uz_d*uz_d;
-    double const u = std::sqrt(u_sq);
+    double const pin_x = static_cast<double>(ux)/c;
+    double const pin_y = static_cast<double>(uy)/c;
+    double const pin_z = static_cast<double>(uz)/c;
+    double const pin_sq = pin_x*pin_x + pin_y*pin_y + pin_z*pin_z;
+    double const pin = std::sqrt(pin_sq);
+    // Kinetic energy of the incident electron [eV], written to avoid cancellations
+    double const E_in = m_e_c2_eV*pin_sq/(std::sqrt(1.0 + pin_sq) + 1.0);
 
-    // Kinetic energy of the incident electron in the rest frame of the ion
-    double const E_incident = Algorithms::KineticEnergy<double>(ux, uy, uz, m1);
+    // Default outputs, for the case where no subshell can be ionized: the ion keeps its momentum
+    // and the two electrons are at rest in the rest frame of the ion
+    u2x_out = u2x_in;
+    u2y_out = u2y_in;
+    u2z_out = u2z_in;
+    u3x_out = 0.;
+    u3y_out = 0.;
+    u3z_out = 0.;
+    ParticleUtils::doLorentzTransformWithU(u3x_out, u3y_out, u3z_out, -u2x_in, -u2y_in, -u2z_in);
+    u1x_out = u3x_out;
+    u1y_out = u3y_out;
+    u1z_out = u3z_out;
+    binding_energy = 0.0;
+    if (pin <= 0.0) { return false; }
 
-    // Energy left to the two outgoing electrons after the ionization of the ion.
-    // It is non-negative since ionization can only occur above the ionization threshold,
-    // but this is enforced here to protect against round-off errors.
-    auto const I = static_cast<double>(ionization_energy);
-    double const E_available = amrex::max(E_incident - I, 0.0);
+    double const nx = pin_x/pin;
+    double const ny = pin_y/pin;
+    double const nz = pin_z/pin;
 
-    double E_ejected = 0.0;
-    if (ejected_electron_energy_model == EjectedElectronEnergyModel::BinaryEncounter) {
-        E_ejected = SampleBinaryEncounterEjectedEnergy(
-            E_incident, I, static_cast<double>(amrex::Random(engine)));
-        E_ejected = amrex::min(E_ejected, 0.5*E_available);
+    // Ionized subshell and momentum of the ejected electron (in units of m_e c)
+    double B, W, pej_x, pej_y, pej_z;
+    bool is_binary;
+    ElectronImpactIonization::SampleEjectedElectron(atomic_data, E_in, charge_state,
+        nx, ny, nz, energy_model, B, W, pej_x, pej_y, pej_z, is_binary, engine);
+    double const E_available = E_in - B - W;
+    if (B <= 0.0 || E_available < 0.0) { return false; }
+    binding_energy = B;
+
+    // Direction of the scattered electron
+    double nsx = nx;
+    double nsy = ny;
+    double nsz = nz;
+    if (is_binary) {
+        double const dx = pin_x - pej_x;
+        double const dy = pin_y - pej_y;
+        double const dz = pin_z - pej_z;
+        double const d = std::sqrt(dx*dx + dy*dy + dz*dz);
+        if (d > 0.0) {
+            nsx = dx/d;
+            nsy = dy/d;
+            nsz = dz/d;
+        }
     }
 
-    // The ejected electron is emitted isotropically.
-    // (The momentum per unit mass of an electron of kinetic energy E is
-    // u = sqrt(E*(E + 2*m*c^2))/(m*c).)
-    amrex::ParticleReal nx_ejected, ny_ejected, nz_ejected;
-    ParticleUtils::getRandomVector(nx_ejected, ny_ejected, nz_ejected, engine);
-    double const u_ejected = std::sqrt(E_ejected*(E_ejected + 2.0*m1_d*c2))/(m1_d*c);
-    double const u3x = u_ejected*static_cast<double>(nx_ejected);
-    double const u3y = u_ejected*static_cast<double>(ny_ejected);
-    double const u3z = u_ejected*static_cast<double>(nz_ejected);
-
-    // The scattered electron keeps the direction of the incident electron.
-    // (u > 0 since the incident electron is above the ionization threshold.)
-    double const nx = ux_d/u;
-    double const ny = uy_d/u;
-    double const nz = uz_d/u;
-
-    // The ion, initially at rest in this frame, takes the momentum lost by the electrons.
-    // Its recoil energy is taken from the energy of the scattered electron. Since the recoil
-    // energy itself depends on the momentum of the scattered electron, it is computed with
-    // fixed-point iterations. These converge quickly, as the error on the recoil energy is
-    // reduced by a factor of order m1/m2 at each iteration.
-    double const mass_ratio = m1_d/m2_d;
+    // The ion takes the momentum that is not carried by the electrons, and its recoil energy
+    // is taken from the scattered electron. Since the recoil energy itself depends on the
+    // momentum of the scattered electron, it is computed with fixed-point iterations, which
+    // converge quickly since the error is reduced by a factor of order m1/m2 at each iteration.
+    double const mass_ratio = static_cast<double>(m1)/static_cast<double>(m2);
     double E_recoil = 0.0;
-    double u_scattered = 0.0;
+    double ps = 0.0;
     double u2x = 0.0, u2y = 0.0, u2z = 0.0;
     for (int iteration = 0; iteration < 4; ++iteration) {
-        double const E_scattered = amrex::max(E_available - E_ejected - E_recoil, 0.0);
-        u_scattered = std::sqrt(E_scattered*(E_scattered + 2.0*m1_d*c2))/(m1_d*c);
-        u2x = mass_ratio*(ux_d - u_scattered*nx - u3x);
-        u2y = mass_ratio*(uy_d - u_scattered*ny - u3y);
-        u2z = mass_ratio*(uz_d - u_scattered*nz - u3z);
+        double const T_scattered = amrex::max(E_available - E_recoil, 0.0)/m_e_c2_eV;
+        ps = std::sqrt(T_scattered*(T_scattered + 2.0));
+        // Momentum per unit mass of the ion, in units of c
+        u2x = mass_ratio*(pin_x - ps*nsx - pej_x);
+        u2y = mass_ratio*(pin_y - ps*nsy - pej_y);
+        u2z = mass_ratio*(pin_z - ps*nsz - pej_z);
         double const u2_sq = u2x*u2x + u2y*u2y + u2z*u2z;
-        E_recoil = m2_d*u2_sq/(std::sqrt(1.0 + u2_sq/c2) + 1.0);
+        E_recoil = m_e_c2_eV/mass_ratio*u2_sq/(std::sqrt(1.0 + u2_sq) + 1.0);
     }
 
-    u1x_out = static_cast<amrex::ParticleReal>(u_scattered*nx);
-    u1y_out = static_cast<amrex::ParticleReal>(u_scattered*ny);
-    u1z_out = static_cast<amrex::ParticleReal>(u_scattered*nz);
-    u2x_out = static_cast<amrex::ParticleReal>(u2x);
-    u2y_out = static_cast<amrex::ParticleReal>(u2y);
-    u2z_out = static_cast<amrex::ParticleReal>(u2z);
-    u3x_out = static_cast<amrex::ParticleReal>(u3x);
-    u3y_out = static_cast<amrex::ParticleReal>(u3y);
-    u3z_out = static_cast<amrex::ParticleReal>(u3z);
+    u1x_out = static_cast<amrex::ParticleReal>(ps*nsx*c);
+    u1y_out = static_cast<amrex::ParticleReal>(ps*nsy*c);
+    u1z_out = static_cast<amrex::ParticleReal>(ps*nsz*c);
+    u2x_out = static_cast<amrex::ParticleReal>(u2x*c);
+    u2y_out = static_cast<amrex::ParticleReal>(u2y*c);
+    u2z_out = static_cast<amrex::ParticleReal>(u2z*c);
+    u3x_out = static_cast<amrex::ParticleReal>(pej_x*c);
+    u3y_out = static_cast<amrex::ParticleReal>(pej_y*c);
+    u3z_out = static_cast<amrex::ParticleReal>(pej_z*c);
 
     // Transform the three particles back to the lab frame
     ParticleUtils::doLorentzTransformWithU(u1x_out, u1y_out, u1z_out, -u2x_in, -u2y_in, -u2z_in);
     ParticleUtils::doLorentzTransformWithU(u2x_out, u2y_out, u2z_out, -u2x_in, -u2y_in, -u2z_in);
     ParticleUtils::doLorentzTransformWithU(u3x_out, u3y_out, u3z_out, -u2x_in, -u2y_in, -u2z_in);
+    return true;
+}
+
+/**
+ * \brief Computes the momentum of an electron ejected in an ionization event, without modifying
+ * the incident electron and the ion. This is used when the macroparticles are not split, in
+ * which case the momenta of the incident electron and of the ion are updated separately, such
+ * that the energy and the momentum are conserved on average.
+ *
+ * @param[in] atomic_data atomic data of the element of the ion
+ * @param[in] charge_state charge state (ionization level) of the ion before the event
+ * @param[in] E kinetic energy of the incident electron in the rest frame of the ion [eV]
+ * @param[in] u1x,u1y,u1z momentum per unit mass (gamma*v) of the incident electron, used to
+ *            define its direction
+ * @param[in] u2x,u2y,u2z momentum per unit mass (gamma*v) of the ion
+ * @param[in] energy_model model for the kinetic energy of the ejected electron
+ * @param[out] u3x_out,u3y_out,u3z_out momentum per unit mass of the ejected electron
+ * @param[in] engine the random engine
+ */
+AMREX_GPU_HOST_DEVICE AMREX_INLINE
+void ElectronImpactIonizationEjectedMomentum (
+    ElectronImpactIonization::AtomicData const& atomic_data, int const charge_state,
+    double const E,
+    amrex::ParticleReal const u1x, amrex::ParticleReal const u1y, amrex::ParticleReal const u1z,
+    amrex::ParticleReal const u2x, amrex::ParticleReal const u2y, amrex::ParticleReal const u2z,
+    EjectedElectronEnergyModel const energy_model,
+    amrex::ParticleReal& u3x_out, amrex::ParticleReal& u3y_out, amrex::ParticleReal& u3z_out,
+    amrex::RandomEngine const& engine)
+{
+    constexpr auto c = PhysConst::c_v<double>;
+
+    // Direction of the incident electron in the rest frame of the ion
+    amrex::ParticleReal ux = u1x;
+    amrex::ParticleReal uy = u1y;
+    amrex::ParticleReal uz = u1z;
+    ParticleUtils::doLorentzTransformWithU(ux, uy, uz, u2x, u2y, u2z);
+    double const u = std::sqrt(static_cast<double>(ux*ux + uy*uy + uz*uz));
+    double nx = 0.0, ny = 0.0, nz = 1.0;
+    if (u > 0.0) {
+        nx = static_cast<double>(ux)/u;
+        ny = static_cast<double>(uy)/u;
+        nz = static_cast<double>(uz)/u;
+    }
+
+    double B, W, pej_x, pej_y, pej_z;
+    bool is_binary;
+    ElectronImpactIonization::SampleEjectedElectron(atomic_data, E, charge_state,
+        nx, ny, nz, energy_model, B, W, pej_x, pej_y, pej_z, is_binary, engine);
+
+    u3x_out = static_cast<amrex::ParticleReal>(pej_x*c);
+    u3y_out = static_cast<amrex::ParticleReal>(pej_y*c);
+    u3z_out = static_cast<amrex::ParticleReal>(pej_z*c);
+    ParticleUtils::doLorentzTransformWithU(u3x_out, u3y_out, u3z_out, -u2x, -u2y, -u2z);
 }
 
 #endif // WARPX_ELECTRON_IMPACT_IONIZATION_INITIALIZE_MOMENTUM_H_

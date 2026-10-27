@@ -6,7 +6,6 @@
  */
 #include "ElectronImpactIonizationCreationFunc.H"
 
-#include "Particles/Collision/BinaryCollision/BinaryCollisionUtils.H"
 #include "Particles/MultiParticleContainer.H"
 #include "Utils/WarpXAlgorithmSelection.H"
 
@@ -16,11 +15,10 @@
 
 ElectronImpactIonizationCreationFunc::ElectronImpactIonizationCreationFunc (
     std::string const& collision_name, MultiParticleContainer const * const mypc)
+    : m_atomic_data(collision_name, mypc)
 {
-    // Check that the species involved are consistent with electron-impact ionization
-    BinaryCollisionUtils::get_electron_impact_ionization_species(collision_name, mypc);
-
     const amrex::ParmParse pp_collision_name(collision_name);
+    pp_collision_name.query("split_macroparticles", m_split_macroparticles);
     pp_collision_name.query_enum_sloppy("ejected_electron_energy_model",
                                         m_ejected_electron_energy_model, "-_");
 }

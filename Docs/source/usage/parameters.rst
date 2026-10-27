@@ -3173,8 +3173,8 @@ Details about the collision models can be found in the :ref:`theory section <mul
     - ``bremsstrahlung`` for slowing of electrons due to Bremsstrahlung collisions with ions.
       This uses the cross sections as given by `Seltzer and Berger <https://doi.org/10.1016/0092-640X(86)90014-8>`__.
     - ``electron_impact_ionization`` for the ionization of ions by collisions with electrons (collisional ionization).
-      The ionization cross section of each charge state is computed with the empirical formula of
-      :cite:t:`param-LotzZPhys1967` (extended to relativistic electrons),
+      The ionization cross section of each charge state is the sum of the cross sections of its occupied subshells,
+      computed with the model given by :pp:param:`<collision_name>.cross_section_model`,
       and the ionization events are computed with the pair-wise algorithm of :cite:t:`param-HigginsonJCP2019`.
       The ion species must have :pp:param:`<species_name>.do_field_ionization` set to ``1``,
       which defines the ionization level of the ions and their physical element.
@@ -3227,7 +3227,8 @@ Details about the collision models can be found in the :ref:`theory section <mul
     If using ``dsmc`` with ionization reactions, the first species in this list must be an electron.
     If using ``electron_impact_ionization``, this should be the electron species in which the ejected electrons are created
     (optional; by default, the :pp:param:`<species_name>.ionization_product_species` of the ion species).
-    The scattered electrons and the ionized ions are added to the colliding electron and ion species, respectively.
+    When the macroparticles are split (see :pp:param:`<collision_name>.split_macroparticles`), the scattered electrons
+    and the ionized ions are added to the colliding electron and ion species, respectively.
     If using ``dsmc`` with ``charge_exchange`` and ``two_product_reaction``, the order of the ``product_species`` should match the order of the species in :pp:param:`<collision_name>.species`.
     If using ``linear_breit_wheeler`` these should be two species: one of electrons and one of positrons.
     If using ``bremsstrahlung``, the product species must be of type photon.
@@ -3579,20 +3580,63 @@ Details about the collision models can be found in the :ref:`theory section <mul
     Only for ``bremsstrahlung``. Minimum energy of the photons created.
     This is relative to the electron energy, defaulting to 1.e-4.
 
+.. pp:param:: <collision_name>.cross_section_model
+    :type: ``string``
+    :default: ``auto``
+    :optional:
+
+    Only for ``electron_impact_ionization``. The model for the ionization cross section of each
+    occupied subshell of the ions. The possible values are:
+
+    - ``mbell``: the modified Bell model of :cite:t:`param-HaquePhysScr2006`, which is a fit to
+      experimental and theoretical cross sections, with the relativistic correction of Gryzinski
+      and a correction factor for ions, as in the EPOCH code :cite:p:`param-MorrisPoP2022`.
+      It is only available for atomic numbers up to 18.
+    - ``lotz``: the empirical formula of :cite:t:`param-LotzZPhys1967`, extended to relativistic electrons.
+    - ``rbeb``: the relativistic binary-encounter-Bethe model of :cite:t:`param-KimPRA2000`.
+    - ``auto``: ``mbell`` for atomic numbers up to 18, and ``lotz`` otherwise.
+
+    The binding energies of the subshells are the binding energies of the electrons of the neutral
+    atom, shifted such that the binding energy of the outermost electron is equal to the ionization
+    energy of the ion :cite:p:`param-CarlsonAtData1970`.
+
+.. pp:param:: <collision_name>.split_macroparticles
+    :type: ``bool``
+    :default: 0
+    :optional:
+
+    Only for ``electron_impact_ionization``. Whether the colliding macroparticles are split in each
+    ionization event.
+
+    - If ``0``, the macroparticles keep their weight: each ionization event of a pair of macroparticles
+      is applied to the electron and to the ion with probabilities that depend on the ratio of
+      their weights, and creates one ejected electron with the weight of the ion when the ion is ionized.
+      The energy and the momentum are conserved on average, several ionizations per collision step
+      (and per pair of macroparticles) are possible, which allows large time steps between collisions
+      (see :pp:param:`<collision_name>.ndt_supercycle`), and the number of macroparticles only
+      increases by one per ionization of an ion macroparticle.
+    - If ``1``, each ionization event between two macroparticles of weights :math:`w_1` and :math:`w_2`
+      subtracts the weight :math:`\min(w_1, w_2)` from both macroparticles, and creates three
+      macroparticles of that weight (the scattered electron, the ionized ion and the ejected electron).
+      The energy and the momentum are then conserved exactly in each event, but each pair of macroparticles
+      can undergo at most one ionization event per collision step, which requires that the probability
+      of ionization per collision step be small, and the number of macroparticles (in particular with low weights)
+      can grow quickly.
+
 .. pp:param:: <collision_name>.ejected_electron_energy_model
     :type: ``string``
-    :default: ``binary_encounter``
+    :default: ``differential_cross_section``
     :optional:
 
     Only for ``electron_impact_ionization``. The model for the kinetic energy of the electrons
     ejected by the ionization events, in the rest frame of the ions.
-    The possible values are ``binary_encounter`` and ``at_rest``.
-    With ``binary_encounter``, the energy :math:`W` transferred from the incident electron to the
-    ejected electron (including the ionization energy :math:`I`) is sampled from the
-    binary-encounter distribution :math:`dP/dW \propto 1/W^2`, for :math:`I \leq W \leq (E + I)/2`,
-    where :math:`E` is the kinetic energy of the incident electron.
+    The possible values are ``differential_cross_section`` and ``at_rest``.
+    With ``differential_cross_section``, the kinetic energy of the ejected electron is sampled
+    from the singly differential cross section of the relativistic binary-encounter-Bethe model
+    :cite:p:`param-KimPRA2000`, and its direction is given by the kinematics of a collision with a
+    free electron (for close collisions) or is isotropic (for distant collisions).
     With ``at_rest``, the ejected electrons are created at rest, and the incident electrons only
-    lose the ionization energy.
+    lose the binding energy of the ionized subshell.
     See the :ref:`Electron-impact ionization section <multiphysics-collisions-electron-impact-ionization>`
     for more details.
 

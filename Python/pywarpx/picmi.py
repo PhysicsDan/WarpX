@@ -3435,11 +3435,19 @@ class ElectronImpactIonizationCollisions(CollisionBase):
         default=None,
         description="The electron species in which the ejected electrons are created. If not specified, the product species of the field ionization of the ions is used.",
     )
-    ejected_electron_energy_model: Literal["binary_encounter", "at_rest"] | None = (
-        Field(
-            default=None,
-            description="The model for the kinetic energy of the ejected electrons, in the rest frame of the ions. Default is 'binary_encounter'.",
-        )
+    cross_section_model: Literal["auto", "lotz", "rbeb", "mbell"] | None = Field(
+        default=None,
+        description="The model for the ionization cross sections: 'lotz', 'rbeb', 'mbell' (only for atomic numbers up to 18), or 'auto', which selects 'mbell' for atomic numbers up to 18 and 'lotz' otherwise. Default is 'auto'.",
+    )
+    split_macroparticles: bool | None = Field(
+        default=None,
+        description="Whether the colliding macroparticles are split in each ionization event, which conserves the energy and the momentum exactly but creates three macroparticles per event and allows at most one ionization per pair of macroparticles per collision step. If False, the macroparticles keep their weight, several ionizations per collision step are possible, and the energy and the momentum are conserved on average. Default is False.",
+    )
+    ejected_electron_energy_model: (
+        Literal["differential_cross_section", "at_rest"] | None
+    ) = Field(
+        default=None,
+        description="The model for the kinetic energy of the ejected electrons, in the rest frame of the ions. Default is 'differential_cross_section'.",
     )
     ndt_supercycle: int | None = Field(
         default=None,
@@ -3463,6 +3471,8 @@ class ElectronImpactIonizationCollisions(CollisionBase):
         collision.species = [species.name for species in self.species]
         if self.product_species is not None:
             collision.product_species = [self.product_species.name]
+        collision.cross_section_model = self.cross_section_model
+        collision.split_macroparticles = self.split_macroparticles
         collision.ejected_electron_energy_model = self.ejected_electron_energy_model
         collision.ndt_supercycle = self.ndt_supercycle
         collision.ndt_subcycle = self.ndt_subcycle

@@ -1,3 +1,4 @@
+CEXE_sources += ElectronImpactIonizationAtomicData.cpp
 CEXE_sources += ElectronImpactIonizationCreationFunc.cpp
 CEXE_sources += ElectronImpactIonizationFunc.cpp
 

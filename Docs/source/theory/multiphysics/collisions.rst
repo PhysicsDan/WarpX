@@ -201,90 +201,163 @@ The ions are represented by a species with field ionization enabled, which provi
 of each macroparticle and the physical element of the ions.
 Field ionization and electron-impact ionization can therefore be used together.
 
-Cross section
-^^^^^^^^^^^^^
+Atomic structure
+^^^^^^^^^^^^^^^^
 
-The ionization cross section of an ion in a given charge state is computed with the empirical formula of
-:cite:t:`b-LotzZPhys1967` (see also :cite:t:`b-LotzZPhys1968`), summed over the occupied subshells of the ion:
-
-    .. math::
-
-        \sigma(E) = a \sum_{s,\, P_s < E} q_s \frac{\ln(E/P_s)}{E P_s}
-
-where :math:`a = 4.5 \times 10^{-14}\,\mathrm{cm^2\,eV^2}`, :math:`E` is the kinetic energy of the incident
-electron in the rest frame of the ion, and :math:`q_s` and :math:`P_s` are the number of electrons and the
-binding energy of the subshell :math:`s`.
-The ground-state configuration of each charge state is obtained by filling the subshells in the order
-given by the Madelung rule, and the binding energy of a subshell is approximated by the ionization energy
-of the charge state in which this subshell is the outermost occupied subshell
-(using the same table of ionization energies as for field ionization).
-The formula of Lotz is non-relativistic. It is extended to relativistic electrons in the same way as in the
-relativistic binary-encounter-Bethe model of :cite:t:`b-KimPRA2000`:
+The ionization cross section of an ion in the charge state :math:`q` is the sum of the cross sections of its
+occupied subshells.
+The ground-state configuration of the ion is obtained by removing the :math:`q` least bound electrons of the neutral atom,
+and the binding energies of its subshells are estimated as in :cite:t:`b-CarlsonAtData1970`:
+the binding energies of the corresponding electrons in the neutral atom (taken from a table of free-atom binding
+energies, which is also used in the Smilei code) are shifted by the same amount, such that the binding energy
+of the outermost electron is equal to the ionization energy :math:`I_q` of the ion
+(taken from the same table of ionization energies as for field ionization):
 
     .. math::
 
-        \sigma(E) = a \sum_{s,\, P_s < E} q_s \frac{\ln(E/P_s) + \left(1 - P_s^2/E^2\right)\delta}{P_s\, m_e c^2 \beta^2/2},
-        \qquad \delta = \ln\left(\frac{\beta^2\gamma^2 m_e c^2}{2E}\right) - \beta^2 = \ln\left(\frac{\gamma+1}{2}\right) - \beta^2
+        B_s(q) = B_s(0) + I_q - B_{\mathrm{outer}}(0)
 
-where :math:`\gamma` and :math:`\beta` are the Lorentz factor and the normalized velocity of the incident
-electron in the rest frame of the ion.
-At high energy, the logarithmic term tends to :math:`\ln\left(\beta^2\gamma^2 m_e c^2/2P_s\right) - \beta^2`,
-which gives the relativistic rise of the Bethe formula (see also :cite:t:`b-PerezPOP2012`),
-while the threshold factor :math:`1 - P_s^2/E^2` ensures that the cross section remains positive above the
-ionization threshold of the inner subshells of heavy ions (whose binding energy can be a significant fraction of
-:math:`m_e c^2`). The original formula of Lotz is recovered when :math:`E \ll m_e c^2`.
+where :math:`B_s(0)` is the binding energy of the subshell :math:`s` in the neutral atom and :math:`B_{\mathrm{outer}}(0)`
+the binding energy, in the neutral atom, of the outermost electron of the ion.
+
+Cross sections
+^^^^^^^^^^^^^^
+
+Three models are available for the cross section of a subshell with :math:`N_s` electrons and binding energy :math:`B_s`,
+for an incident electron of kinetic energy :math:`E` in the rest frame of the ion
+(see :pp:param:`<collision_name>.cross_section_model`).
+In all cases, the cross section vanishes for :math:`E \leq B_s`.
+
+* The modified Bell (MBELL) model of :cite:t:`b-HaquePhysScr2006` is a fit of experimental and theoretical cross sections
+  for the subshells :math:`1s`, :math:`2s`, :math:`2p`, :math:`3s` and :math:`3p`, and is therefore available for
+  atomic numbers :math:`Z \leq 18`. It is also used in the EPOCH code :cite:p:`b-MorrisPoP2022`:
+
+    .. math::
+
+        \sigma_s = N_s F_{\mathrm{ion}}\, G_R\, \frac{1}{E B_s}\left[ A_{nl} \ln u + \sum_{k=1}^{7} B_{nl,k} \left(1 - \frac{1}{u}\right)^k \right]
+
+  where :math:`u = E/B_s`, :math:`A_{nl}` and :math:`B_{nl,k}` are the fitted parameters of the subshell,
+  :math:`G_R` is the relativistic factor of Gryzinski, and
+  :math:`F_{\mathrm{ion}} = 1 + 3\left(q_{\mathrm{eff}}/(Z u)\right)^{\lambda}` is a correction factor for ions,
+  with :math:`\lambda = 1.27` for :math:`s` subshells and :math:`\lambda = 0.542` for :math:`p` subshells, and with
+  :math:`q_{\mathrm{eff}}` the atomic number minus the number of electrons in the subshell and in the subshells
+  that are more bound.
+
+* The empirical formula of :cite:t:`b-LotzZPhys1967` (see also :cite:t:`b-LotzZPhys1968`), extended to relativistic
+  electrons in the same way as in the relativistic binary-encounter-Bethe model of :cite:t:`b-KimPRA2000`:
+
+    .. math::
+
+        \sigma_s = a N_s \frac{\ln(E/B_s) + \left(1 - B_s^2/E^2\right)\delta}{B_s\, m_e c^2 \beta^2/2},
+        \qquad \delta = \ln\left(\frac{\gamma+1}{2}\right) - \beta^2
+
+  where :math:`a = 4.5 \times 10^{-14}\,\mathrm{cm^2\,eV^2}`, and :math:`\gamma` and :math:`\beta` are the Lorentz factor
+  and the normalized velocity of the incident electron in the rest frame of the ion.
+  The original formula of Lotz is recovered when :math:`E \ll m_e c^2`, while at high energy the logarithmic term tends to
+  :math:`\ln\left(\beta^2\gamma^2 m_e c^2/2B_s\right) - \beta^2`, which gives the relativistic rise of the Bethe formula.
+  The threshold factor :math:`1 - B_s^2/E^2` ensures that the cross section remains positive above the ionization
+  threshold of the inner subshells of heavy ions.
+
+* The relativistic binary-encounter-Bethe (RBEB) model of :cite:t:`b-KimPRA2000` (their Eq. 22), in which the mean kinetic
+  energy of the bound electrons is approximated by their binding energy:
+
+    .. math::
+
+        \sigma_s = \frac{2\pi r_e^2 N_s}{(\beta_t^2 + 2\beta_b^2)\, b'} \left[ \frac{A_3}{2}\left(1 - \frac{1}{t^2}\right)
+        + 1 - \frac{1}{t} - \frac{\ln t}{t+1}\frac{1+2t'}{(1+t'/2)^2} + \frac{b'^2}{(1+t'/2)^2}\frac{t-1}{2} \right]
+
+  where :math:`t = E/B_s`, :math:`t' = E/m_e c^2`, :math:`b' = B_s/m_e c^2`, :math:`\beta_t^2 = 1 - 1/(1+t')^2`,
+  :math:`\beta_b^2 = 1 - 1/(1+b')^2` and :math:`A_3 = \ln\left(\beta_t^2/(1-\beta_t^2)\right) - \beta_t^2 - \ln(2b')`.
+
+By default (``auto``), the MBELL model is used for :math:`Z \leq 18` and the Lotz model otherwise.
+Compared with the ionization rate coefficients recommended by :cite:t:`b-DereAA2007` for the elements from hydrogen to zinc
+in thermal plasmas, the MBELL model is the most accurate for :math:`Z \leq 18` (typically within 30%),
+the Lotz model is accurate for ions but overestimates the ionization of neutral atoms (typically by a factor up to 2),
+and the RBEB model with the approximations above underestimates the ionization of ions.
 
 Algorithm
 ^^^^^^^^^
 
 The electron and ion macroparticles are sorted by cell and paired as in the other binary collision models.
-For each pair, the probability of ionization is computed with the algorithm of :cite:t:`b-HigginsonJCP2019`,
-which supports macroparticles with arbitrary weights :math:`w_e` and :math:`w_i`:
+For each pair of macroparticles, of weights :math:`w_e` and :math:`w_i`, the expected number of ionization events
+of weight :math:`w_{\min} = \min(w_e, w_i)` during the collision time step :math:`\Delta t` is computed as in the
+algorithm of :cite:t:`b-HigginsonJCP2019`:
 
     .. math::
 
-        P = 1 - \exp\left( -N_{\min}\, w_{\max}\, \sigma v_{rel}\, \Delta t / \Delta V \right)
+        x = N_{\min}\, w_{\max}\, \sigma v_{rel}\, \Delta t / \Delta V
 
-where :math:`N_{\min}` is the number of macroparticles of the species with fewer macroparticles in the cell,
-:math:`w_{\max} = \max(w_e, w_i)`, :math:`\Delta t` is the collision time step and :math:`\Delta V` is the
-volume of the cell. As for nuclear fusion, the reaction rate :math:`\sigma v_{rel}` is evaluated in the
+where :math:`N_{\min}` is the number of macroparticles of the species with fewer macroparticles in the cell
+(which takes into account the pairs that are not sampled), :math:`w_{\max} = \max(w_e, w_i)` and :math:`\Delta V` is
+the volume of the cell. As for nuclear fusion, the reaction rate :math:`\sigma v_{rel}` is evaluated in the
 center-of-momentum frame of the pair and converted to the lab frame.
-If an ionization event occurs, the weight :math:`w_{\min} = \min(w_e, w_i)` is subtracted from both colliding
-macroparticles, and three macroparticles of weight :math:`w_{\min}` are created: the scattered electron,
-at the position of the incident electron and in the same species, the ion with its ionization level increased
-by one, in the same species, and the ejected electron, in the product species.
-The ion and the ejected electron are created at the position of the ion, so that the charge is conserved locally.
-When the electron and ion macroparticles have different weights, the number of macroparticles thus increases
-with each ionization event, and particle resampling may be needed in long simulations.
-The accuracy of this algorithm requires the probability :math:`P` to be small for all pairs, which also ensures
-that the fact that each ion can be ionized at most once per collision time step does not limit the ionization rate.
-Note that, when the electron macroparticles have different weights (which is typically the case after a number of
-ionization events, since the scattered electrons have the weight of the ion macroparticles), the probability
-:math:`P` of the pairs that involve the electron macroparticles with the largest weights is larger than the mean
-ionization probability of the ions per time step, by up to the ratio of these weights to the mean weight of the
-electron macroparticles. If :math:`P` is not small for these pairs, the ionization rate is underestimated.
+Two methods are then available (see :pp:param:`<collision_name>.split_macroparticles`):
+
+* By default, the macroparticles are not split.
+  The ionization events of each pair are sampled as a Poisson process of rate :math:`x/\Delta t`
+  (with :math:`x` recomputed after each event, since the energy of the electron and the charge state of the ion change),
+  which allows several successive ionizations within one collision time step.
+  Each event is applied to the electron with the probability :math:`w_{\min}/w_e` and to the ion with the probability
+  :math:`w_{\min}/w_i` (using the same random number, so that it is always applied to the macroparticle with the smallest weight).
+  When the event is applied to the electron, its momentum is updated as described below.
+  When it is applied to the ion, its ionization level is increased by one, its recoil momentum is applied,
+  and an ejected electron with the weight :math:`w_i` is created at the position of the ion.
+  The charge is thus conserved exactly, and the energy and the momentum are conserved on average.
+  The number of macroparticles increases by one for each ionization of an ion macroparticle.
+  Since the successive events of a pair involve the same electron macroparticle, the probability that an ion is ionized several
+  times within one collision time step is computed with the energy of this electron, rather than with the average over the
+  electron distribution, which overestimates these successive ionizations for broad electron distributions when the
+  ionization rates depend strongly on the electron energy (for instance near the ionization thresholds).
+  (This effect is reduced when there are more electron macroparticles than ion macroparticles in the cells,
+  since each ion is then paired with several electrons in each collision time step.)
+  The results should therefore be checked for convergence with respect to the collision time step when the probability
+  of ionization per collision time step is not small.
+
+* If the macroparticles are split, an ionization event occurs with the probability :math:`P = 1 - \exp(-x)`.
+  In that case, the weight :math:`w_{\min}` is subtracted from both colliding macroparticles, and three macroparticles
+  of weight :math:`w_{\min}` are created: the scattered electron, at the position of the incident electron and in
+  the same species, the ion with its ionization level increased by one, in the same species, and the ejected electron,
+  in the product species. The ion and the ejected electron are created at the position of the ion,
+  so that the charge is conserved locally, and the energy and the momentum are conserved exactly in each event.
+  When the electron and ion macroparticles have different weights, the number of macroparticles increases by up to
+  three for each ionization event, and particle resampling may be needed in long simulations.
+  Each pair undergoes at most one ionization event per collision time step, and the accuracy of this method therefore
+  requires :math:`x \ll 1` for all pairs (note that :math:`x` includes the ratio :math:`w_{\max}/w_{\min}`,
+  and is therefore larger than the probability of ionization of the ions per time step when the weights differ).
+
 If needed, the collision time step can be reduced with :pp:param:`<collision_name>.ndt_subcycle`.
 
 The kinematics of the ionization events are computed in the rest frame of the ion.
-The incident electron loses the ionization energy :math:`I` of the ion plus the kinetic energy :math:`\epsilon`
-of the ejected electron.
-With the default ``binary_encounter`` model (see :pp:param:`<collision_name>.ejected_electron_energy_model`),
-the energy transfer :math:`W = \epsilon + I` is sampled from the binary-encounter (Thomson) distribution
-:math:`dP/dW \propto 1/W^2`, for :math:`I \leq W \leq (E + I)/2` (since, by convention, the ejected electron is
-the slower of the two outgoing electrons).
-With the ``at_rest`` model, :math:`\epsilon = 0`.
-The ejected electron is emitted isotropically, the scattered electron keeps the direction of the incident
-electron, and the ion recoils such that the momentum is conserved.
-The recoil energy of the ion is taken from the scattered electron, such that the total kinetic energy decreases
-exactly by :math:`I`.
+The ionized subshell is selected with a probability proportional to its contribution to the cross section,
+and the incident electron loses the binding energy :math:`B_s` of this subshell plus the kinetic energy
+:math:`W` of the ejected electron.
+With the default ``differential_cross_section`` model (see :pp:param:`<collision_name>.ejected_electron_energy_model`),
+:math:`W` is sampled from the singly differential cross section of the RBEB model :cite:p:`b-KimPRA2000`:
+
+    .. math::
+
+        \frac{d\sigma}{dw} \propto \frac{1}{(w+1)^2} + \frac{1}{(t-w)^2}
+        - \frac{1+2t'}{(1+t'/2)^2}\frac{1}{t+1}\left(\frac{1}{w+1} + \frac{1}{t-w}\right)
+        + \frac{b'^2}{(1+t'/2)^2} + A_3\left(\frac{1}{(w+1)^3} + \frac{1}{(t-w)^3}\right)
+
+with :math:`w = W/B_s` and :math:`0 \leq w \leq (t-1)/2` (by convention, the ejected electron is the slower of the two
+outgoing electrons). The first terms describe close (binary) collisions, in which the energy is transferred to a
+quasi-free electron, and the last term distant (dipole) collisions, which mostly produce slow electrons.
+For a close collision, the ejected electron is emitted at the angle given by the kinematics of a collision with a free
+electron at rest, :math:`\cos^2\theta = W(E + 2m_ec^2)/\left(E(W + 2m_ec^2)\right)`, with respect to the direction of the
+incident electron, and the scattered electron is deflected such that the momentum of the two electrons is conserved.
+For a distant collision, the ejected electron is emitted isotropically and the scattered electron keeps its direction.
+With the ``at_rest`` model, :math:`W = 0`.
+In all cases, the ion recoils such that the momentum is conserved, and the recoil energy of the ion is taken from the
+scattered electron, such that the total kinetic energy decreases exactly by :math:`B_s`.
+
 Note that, as for field ionization, the mass of the ion species does not change when the ions are ionized.
-As a consequence, the energy and the momentum are conserved exactly in the rest frame of the ion,
-while in the lab frame the ejected electron also carries the kinetic energy and the momentum that it had
+As a consequence, in the lab frame, the ejected electron also carries the kinetic energy and the momentum that it had
 when it was bound to the moving ion (and which are not removed from the ion).
 These are smaller than the kinetic energy and the momentum of the ion by a factor of order :math:`m_e/m_{ion}`.
-Finally, ionization from inner subshells is treated in the same way as ionization from the outermost subshell,
-i.e., the energy cost of the event is always the ionization energy of the ion
-(the subsequent relaxation of the ion, e.g. by Auger emission, is not modeled).
+Finally, the relaxation of the ions after the ionization of an inner subshell (e.g. by Auger emission, which can
+ionize the ion further) is not modeled, and neither are recombination, excitation-autoionization and the lowering of the
+ionization energies in dense plasmas.
 
 .. bibliography::
     :keyprefix: b-

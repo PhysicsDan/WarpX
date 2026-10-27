@@ -7,15 +7,16 @@
 #ifndef WARPX_ELECTRON_IMPACT_IONIZATION_CREATION_FUNC_H_
 #define WARPX_ELECTRON_IMPACT_IONIZATION_CREATION_FUNC_H_
 
+#include "ElectronImpactIonizationAtomicData.H"
+#include "ElectronImpactIonizationCrossSection.H"
+#include "ElectronImpactIonizationFunc.H"
 #include "ElectronImpactIonizationInitializeMomentum.H"
 
-#include "Particles/Collision/BinaryCollision/BinaryCollisionUtils.H"
 #include "Particles/ParticleCreation/DefaultInitialization.H"
 #include "Particles/ParticleCreation/SmartCopy.H"
 #include "Particles/MultiParticleContainer.H"
 #include "Particles/WarpXParticleContainer.H"
 #include "Utils/WarpXAlgorithmSelection.H"
-#include "Utils/WarpXConst.H"
 
 #include <AMReX_DenseBins.H>
 #include <AMReX_GpuContainers.H>
@@ -30,19 +31,24 @@
 /**
  * \brief This functor creates the particles that result from electron-impact ionization
  * events, and sets their properties (position, momentum, weight and ionization level).
+ * The product slots are, in that order: the incident electron species, the ion species and
+ * the species of the ejected electrons.
  *
- * Each ionization event between an incident electron and an ion, of weight
- * p_pair_reaction_weight (which has already been subtracted from the weight of both
- * colliding macroparticles), creates three new macroparticles of that weight,
- * in the three product slots:
- *  - Slot 0: the incident electron species, for the scattered incident electron,
- *    created at the position of the incident electron.
- *  - Slot 1: the ion species, for the ion, whose ionization level is increased by one,
- *    created at the position of the ion.
- *  - Slot 2: the species of the ejected electrons, created at the position of the ion,
- *    which ensures local charge conservation.
- * This approach (also used for ionization in DSMC collisions) handles colliding
- * macroparticles with different weights, while conserving the energy and momentum.
+ * When the macroparticles are split, each ionization event between an incident electron and
+ * an ion, of weight p_pair_reaction_weight (which has already been subtracted from the weight
+ * of both colliding macroparticles), creates three new macroparticles of that weight:
+ *  - Slot 0: the scattered incident electron, created at the position of the incident electron.
+ *  - Slot 1: the ion, whose ionization level is increased by one, created at the position of
+ *    the ion.
+ *  - Slot 2: the ejected electron, created at the position of the ion, which ensures local
+ *    charge conservation.
+ * The momenta are computed with ElectronImpactIonizationInitializeMomentum, which conserves the
+ * energy (including the binding energy) and the momentum exactly.
+ *
+ * When the macroparticles are not split, the incident electrons and the ions have already been
+ * updated by ElectronImpactIonizationFunc, and only the ejected electrons are created (slot 2),
+ * at the position of the ion and with the weight of the ion, one for each ionization of the
+ * ion. Their momenta are sampled with ElectronImpactIonizationEjectedMomentum.
  */
 class ElectronImpactIonizationCreationFunc
 {
@@ -81,8 +87,10 @@ public:
      * @param[in,out] tile_products array containing the tiles of the product particles
      * @param[in] m1 mass of the incident electrons
      * @param[in] m2 mass of the ions
-     * @param[in] p_mask a mask that is 1 if the binary collision has resulted in an
-     *            ionization event, 0 otherwise
+     * @param[in] p_mask when the macroparticles are split, 1 if the binary collision has
+     *            resulted in an ionization event and 0 otherwise; when they are not split, the
+     *            number of ionizations of the ion of the pair and its initial ionization level
+     *            (see ElectronImpactIonizationFunc::mask_level_shift)
      * @param[in,out] products_np array storing the number of existing particles in the
      *            tiles of the product species, before the new particles are added
      * @param[in] copy_species1 array of functors used to copy data from the incident electron
@@ -94,7 +102,8 @@ public:
      * @param[in] p_pair_indices_2 array that stores the indices of the ions that were used
      *            in the binary collisions
      * @param[in] p_pair_reaction_weight array that stores the weight of the product particles
-     * @param[in] p_product_data array that stores the ionization energy of the ions [eV]
+     * @param[in] p_product_data when the macroparticles are not split, array that stores the
+     *            kinetic energy of the incident electron in the rest frame of the ion [eV]
      * \return num_added number of particles added to each product species
      */
     AMREX_INLINE
@@ -116,22 +125,34 @@ public:
     {
         if (n_total_pairs == 0) { return amrex::Vector<int>(m_num_product_species, 0); }
 
-        // Compute the offset of each ionization event in the product tiles
+        // Compute the offset of the new particles of each pair in the product tiles.
+        // Each pair creates p_mask[i] & mask_count_bits particles in each product slot that
+        // is filled (with the bit mask being irrelevant when the macroparticles are split).
+        constexpr index_type mask_count_bits = ElectronImpactIonizationFunc::mask_count_bits;
+        constexpr int mask_level_shift = ElectronImpactIonizationFunc::mask_level_shift;
         amrex::Gpu::DeviceVector<index_type> offsets(n_total_pairs);
         index_type* AMREX_RESTRICT p_offsets = offsets.dataPtr();
-        index_type const n_events = amrex::Scan::ExclusiveSum(n_total_pairs, p_mask, p_offsets);
+        index_type const n_new = amrex::Scan::PrefixSum<index_type>(n_total_pairs,
+            [=] AMREX_GPU_DEVICE (index_type i) -> index_type {
+                return p_mask[i] & mask_count_bits;
+            },
+            [=] AMREX_GPU_DEVICE (index_type i, index_type const& s) { p_offsets[i] = s; },
+            amrex::Scan::Type::exclusive, amrex::Scan::retSum);
 
-        // Each ionization event creates one particle in each product species.
+        // When the macroparticles are split, each ionization event creates one particle in
+        // each product slot; otherwise, only the ejected electrons (slot 2) are created.
         // Note that the colliding species are also product species, so that some of the
         // tiles below are those of the colliding species (and the same tile can appear twice
         // if the ejected electrons are added to the incident electron species). The tiles are
         // resized one after the other, and products_np keeps track of the positions at which
         // the new particles of each product slot are stored.
-        amrex::Vector<int> num_added_vec(m_num_product_species, static_cast<int>(n_events));
+        bool const split_macroparticles = m_split_macroparticles;
+        amrex::Vector<int> num_added_vec(m_num_product_species, 0);
         for (int i = 0; i < m_num_product_species; i++)
         {
+            if (split_macroparticles || i == 2) { num_added_vec[i] = static_cast<int>(n_new); }
             products_np[i] = tile_products[i]->numParticles();
-            tile_products[i]->resize(products_np[i] + n_events);
+            tile_products[i]->resize(products_np[i] + num_added_vec[i]);
         }
 
         // The particle data of the colliding species is accessed after the resize
@@ -163,76 +184,107 @@ public:
         index_type const* AMREX_RESTRICT products_np_data = products_np.data();
 #endif
 
+        ElectronImpactIonization::AtomicData const atomic_data = m_atomic_data.data();
         EjectedElectronEnergyModel const ejected_electron_energy_model =
             m_ejected_electron_energy_model;
+        int const ion_level_comp = pc_products[1]->GetIntCompIndex("ionizationLevel")
+                                   - WarpXParticleContainer::NArrayInt;
 
         amrex::ParallelForRNG(n_total_pairs,
         [=] AMREX_GPU_DEVICE (int i, amrex::RandomEngine const& engine) noexcept
         {
-            if (p_mask[i] == 0) { return; }
+            auto const n_created = static_cast<int>(p_mask[i] & mask_count_bits);
+            if (n_created == 0) { return; }
 
             auto const i1 = static_cast<int>(p_pair_indices_1[i]);
             auto const i2 = static_cast<int>(p_pair_indices_2[i]);
             amrex::ParticleReal const weight = p_pair_reaction_weight[i];
+            // Momentum per unit mass (gamma*v) of the incident electron and of the ion
+            amrex::ParticleReal const u1x = soa_1.m_rdata[PIdx::ux][i1];
+            amrex::ParticleReal const u1y = soa_1.m_rdata[PIdx::uy][i1];
+            amrex::ParticleReal const u1z = soa_1.m_rdata[PIdx::uz][i1];
+            amrex::ParticleReal const u2x = soa_2.m_rdata[PIdx::ux][i2];
+            amrex::ParticleReal const u2y = soa_2.m_rdata[PIdx::uy][i2];
+            amrex::ParticleReal const u2z = soa_2.m_rdata[PIdx::uz][i2];
+            auto& soa_ejected = soa_products_data[2];
 
-            // Index of the new particle in each product slot
-            auto const idx_electron = static_cast<int>(products_np_data[0] + p_offsets[i]);
-            auto const idx_ion = static_cast<int>(products_np_data[1] + p_offsets[i]);
-            auto const idx_ejected = static_cast<int>(products_np_data[2] + p_offsets[i]);
+            if (split_macroparticles) {
+                // Index of the new particle in each product slot
+                auto const idx_electron = static_cast<int>(products_np_data[0] + p_offsets[i]);
+                auto const idx_ion = static_cast<int>(products_np_data[1] + p_offsets[i]);
+                auto const idx_ejected = static_cast<int>(products_np_data[2] + p_offsets[i]);
+                auto& soa_electron = soa_products_data[0];
+                auto& soa_ion = soa_products_data[1];
 
-            // The scattered electron is created at the position of the incident electron,
-            // while the ion and the ejected electron are created at the position of the ion
-            copy_species1[0](soa_products_data[0], soa_1, i1, idx_electron, engine);
-            copy_species2[1](soa_products_data[1], soa_2, i2, idx_ion, engine);
-            copy_species2[2](soa_products_data[2], soa_2, i2, idx_ejected, engine);
+                // The scattered electron is created at the position of the incident electron,
+                // while the ion and the ejected electron are created at the position of the ion
+                copy_species1[0](soa_electron, soa_1, i1, idx_electron, engine);
+                copy_species2[1](soa_ion, soa_2, i2, idx_ion, engine);
+                copy_species2[2](soa_ejected, soa_2, i2, idx_ejected, engine);
 
-            soa_products_data[0].m_rdata[PIdx::w][idx_electron] = weight;
-            soa_products_data[1].m_rdata[PIdx::w][idx_ion] = weight;
-            soa_products_data[2].m_rdata[PIdx::w][idx_ejected] = weight;
+                soa_electron.m_rdata[PIdx::w][idx_electron] = weight;
+                soa_ion.m_rdata[PIdx::w][idx_ion] = weight;
+                soa_ejected.m_rdata[PIdx::w][idx_ejected] = weight;
 
-            // Ionization energy of the ion, converted from eV to J
-            amrex::ParticleReal const ionization_energy = p_product_data[i]*PhysConst::q_e;
-
-            ElectronImpactIonizationInitializeMomentum(
-                soa_1.m_rdata[PIdx::ux][i1], soa_1.m_rdata[PIdx::uy][i1],
-                soa_1.m_rdata[PIdx::uz][i1],
-                soa_2.m_rdata[PIdx::ux][i2], soa_2.m_rdata[PIdx::uy][i2],
-                soa_2.m_rdata[PIdx::uz][i2],
-                m1, m2, ionization_energy, ejected_electron_energy_model,
-                soa_products_data[0].m_rdata[PIdx::ux][idx_electron],
-                soa_products_data[0].m_rdata[PIdx::uy][idx_electron],
-                soa_products_data[0].m_rdata[PIdx::uz][idx_electron],
-                soa_products_data[1].m_rdata[PIdx::ux][idx_ion],
-                soa_products_data[1].m_rdata[PIdx::uy][idx_ion],
-                soa_products_data[1].m_rdata[PIdx::uz][idx_ion],
-                soa_products_data[2].m_rdata[PIdx::ux][idx_ejected],
-                soa_products_data[2].m_rdata[PIdx::uy][idx_ejected],
-                soa_products_data[2].m_rdata[PIdx::uz][idx_ejected],
-                engine);
+                double binding_energy;
+                ElectronImpactIonizationInitializeMomentum(
+                    atomic_data, soa_2.m_runtime_idata[ion_level_comp][i2],
+                    u1x, u1y, u1z, u2x, u2y, u2z, m1, m2, ejected_electron_energy_model,
+                    soa_electron.m_rdata[PIdx::ux][idx_electron],
+                    soa_electron.m_rdata[PIdx::uy][idx_electron],
+                    soa_electron.m_rdata[PIdx::uz][idx_electron],
+                    soa_ion.m_rdata[PIdx::ux][idx_ion],
+                    soa_ion.m_rdata[PIdx::uy][idx_ion],
+                    soa_ion.m_rdata[PIdx::uz][idx_ion],
+                    soa_ejected.m_rdata[PIdx::ux][idx_ejected],
+                    soa_ejected.m_rdata[PIdx::uy][idx_ejected],
+                    soa_ejected.m_rdata[PIdx::uz][idx_ejected],
+                    binding_energy, engine);
+            } else {
+                // The ion was ionized n_created times, starting from this ionization level
+                auto const initial_level = static_cast<int>(p_mask[i] >> mask_level_shift);
+                auto const E_kin = static_cast<double>(p_product_data[i]);
+                for (int j = 0; j < n_created; ++j) {
+                    auto const idx_ejected =
+                        static_cast<int>(products_np_data[2] + p_offsets[i]) + j;
+                    copy_species2[2](soa_ejected, soa_2, i2, idx_ejected, engine);
+                    soa_ejected.m_rdata[PIdx::w][idx_ejected] = weight;
+                    ElectronImpactIonizationEjectedMomentum(
+                        atomic_data, initial_level + j, E_kin,
+                        u1x, u1y, u1z, u2x, u2y, u2z, ejected_electron_energy_model,
+                        soa_ejected.m_rdata[PIdx::ux][idx_ejected],
+                        soa_ejected.m_rdata[PIdx::uy][idx_ejected],
+                        soa_ejected.m_rdata[PIdx::uz][idx_ejected],
+                        engine);
+                }
+            }
         });
 
         // Initialize the user runtime components
         for (int i = 0; i < m_num_product_species; i++)
         {
             int const start_index = static_cast<int>(products_np[i]);
-            int const stop_index = static_cast<int>(products_np[i] + n_events);
+            int const stop_index = static_cast<int>(products_np[i]) + num_added_vec[i];
             ParticleCreation::DefaultInitializeRuntimeAttributes(*tile_products[i],
                                                  *pc_products[i], start_index, stop_index);
         }
 
-        // Set the ionization level of the new ions to that of the ions they come from,
-        // plus one. (This is done after the default initialization of the runtime attributes,
-        // which sets the ionization level of new particles to the initial ionization level.)
-        int const ion_level_index = pc_products[1]->GetIntCompIndex("ionizationLevel");
-        int* AMREX_RESTRICT ion_level =
-            tile_products[1]->GetStructOfArrays().GetIntData(ion_level_index).dataPtr();
-        index_type const ion_np = products_np[1];
-        amrex::ParallelFor(n_total_pairs,
-        [=] AMREX_GPU_DEVICE (int i) noexcept
-        {
-            if (p_mask[i] == 0) { return; }
-            ion_level[ion_np + p_offsets[i]] = ion_level[p_pair_indices_2[i]] + 1;
-        });
+        // When the macroparticles are split, set the ionization level of the new ions to that
+        // of the ions they come from, plus one. (This is done after the default initialization
+        // of the runtime attributes, which sets the ionization level of new particles to the
+        // initial ionization level.)
+        if (split_macroparticles) {
+            int const ion_level_index = pc_products[1]->GetIntCompIndex("ionizationLevel");
+            int* AMREX_RESTRICT ion_level =
+                tile_products[1]->GetStructOfArrays().GetIntData(ion_level_index).dataPtr();
+            index_type const ion_np = products_np[1];
+            amrex::ParallelFor(n_total_pairs,
+            [=] AMREX_GPU_DEVICE (int i) noexcept
+            {
+                if (p_mask[i] == 0) { return; }
+                ion_level[ion_np + p_offsets[i]] = ion_level[p_pair_indices_2[i]] + 1;
+            });
+        }
 
         amrex::Gpu::synchronize();
 
@@ -243,9 +295,15 @@ private:
     // Number of product species: incident electrons, ions and ejected electrons
     int m_num_product_species = 3;
 
+    // Whether the colliding macroparticles are split in each ionization event
+    bool m_split_macroparticles = false;
+
     // Model for the kinetic energy of the ejected electrons
     EjectedElectronEnergyModel m_ejected_electron_energy_model =
         EjectedElectronEnergyModel::Default;
+
+    // Atomic data of the element of the ions
+    ElectronImpactIonizationAtomicData m_atomic_data;
 };
 
 #endif // WARPX_ELECTRON_IMPACT_IONIZATION_CREATION_FUNC_H_
