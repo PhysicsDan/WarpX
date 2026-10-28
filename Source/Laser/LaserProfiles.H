@@ -178,6 +178,9 @@ private:
     } m_params;
 
     amrex::Parser m_parser;
+    //! Compiled field function. It is compiled once in init, since fill_amplitude is called
+    //! from OpenMP threads and the lazy compilation of amrex::Parser is not thread-safe.
+    amrex::ParserExecutor<3> m_parser_exe;
 };
 
 /**

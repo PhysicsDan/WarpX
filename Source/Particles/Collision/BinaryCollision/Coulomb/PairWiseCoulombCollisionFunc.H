@@ -10,6 +10,7 @@
 
 #include "Particles/Collision/CollisionFuncBase.H"
 #include "ElasticCollisionPerez.H"
+#include "Particles/MultiParticleContainer.H"
 #include "Particles/Pusher/GetAndSetPosition.H"
 #include "Particles/WarpXParticleContainer.H"
 #include "Utils/Parser/ParserUtils.H"
@@ -23,6 +24,8 @@
 /**
  * \brief This functor performs pairwise Coulomb collision on a single cell by calling the function
  *        ElasticCollisionPerez. It also reads and contains the Coulomb logarithm.
+ *        For a species with field ionization, the charge of each macroparticle is the
+ *        elementary charge times its ionization level (so that neutral atoms do not collide).
  */
 class PairWiseCoulombCollisionFunc
     : public CollisionFuncBase
@@ -45,16 +48,25 @@ public:
      * \brief Constructor of the PairWiseCoulombCollisionFunc class
      *
      * @param[in] collision_name the name of the collision
-     * @param[in] mypc the particle container (unused)
+     * @param[in] mypc the particle container
      * @param[in] isSameSpecies true if this is an intra-species colission
      */
     PairWiseCoulombCollisionFunc (const std::string& collision_name,
-                                  [[maybe_unused]] MultiParticleContainer const * const mypc,
+                                  MultiParticleContainer const * const mypc,
                                   const bool isSameSpecies):
         m_isSameSpecies{isSameSpecies}
     {
         using namespace amrex::literals;
         const amrex::ParmParse pp_collision_name(collision_name);
+
+        // The species with field ionization are those whose charge is given by the ionization
+        // level of each macroparticle (in the same order as in BinaryCollision)
+        amrex::Vector<std::string> species_names;
+        pp_collision_name.getarr("species", species_names);
+        if (species_names.size() == 2u) {
+            m_species1 = &mypc->GetParticleContainerFromName(species_names[0]);
+            m_species2 = &mypc->GetParticleContainerFromName(species_names[1]);
+        }
 
         utils::parser::queryWithParser(
             pp_collision_name, "use_global_debye_length", m_use_global_debye_length);
@@ -101,7 +113,8 @@ public:
          * @param[in] n1,n2 are local densities.
          * @param[in] T1,T2 are local temperatures.
          * @param[in] global_lamdb global Debye length.
-         * @param[in] q1,q2 are charges.
+         * @param[in] q1,q2 are charges (multiplied by the ionization level of each
+         *            macroparticle for a species with field ionization).
          * @param[in] m1,m2 are masses.
          * @param[in] dt is the time step length between two collision calls.
          * @param[in] dV is the volume of the corresponding cell.
@@ -136,10 +149,15 @@ public:
                     soa_1, soa_2, n1, n2, T1, T2,
                     q1, q2, m1, m2,
                     dt, global_lamdb, m_scattering_model, m_CoulombLog,
-                    dV, engine, m_isSameSpecies, coll_idx);
+                    dV, engine, m_isSameSpecies, coll_idx,
+                    m_ionization_level_comp1, m_ionization_level_comp2);
         }
 
         amrex::ParticleReal m_CoulombLog;
+        // Index of the ionization level among the runtime integer attributes of each species,
+        // or -1 if the species does not have field ionization
+        int m_ionization_level_comp1 = -1;
+        int m_ionization_level_comp2 = -1;
         CumulativeScatteringModel m_scattering_model;
         bool m_computeSpeciesDensities = true;
         bool m_computeSpeciesTemperatures = false;
@@ -147,13 +165,35 @@ public:
         bool m_isSameSpecies;
     };
 
-    [[nodiscard]] Executor const& executor (int const /*lev*/, amrex::MFIter const& /*mfi*/) const { return m_exe; }
+    /**
+     * \brief Returns the executor of this functor.
+     * The index of the ionization level attribute of a species with field ionization is only
+     * known once the ionization module of the species has been initialized, which happens after
+     * this functor is constructed. It is therefore set here.
+     */
+    [[nodiscard]] Executor executor (int const /*lev*/, amrex::MFIter const& /*mfi*/) const
+    {
+        Executor exe = m_exe;
+        if (m_species1 != nullptr && m_species1->DoFieldIonization()) {
+            exe.m_ionization_level_comp1 = m_species1->GetIntCompIndex("ionizationLevel")
+                                           - WarpXParticleContainer::NArrayInt;
+        }
+        if (m_species2 != nullptr && m_species2->DoFieldIonization()) {
+            exe.m_ionization_level_comp2 = m_species2->GetIntCompIndex("ionizationLevel")
+                                           - WarpXParticleContainer::NArrayInt;
+        }
+        return exe;
+    }
 
     [[nodiscard]] bool use_global_debye_length() const { return m_use_global_debye_length; }
 
 private:
     amrex::ParticleReal m_CoulombLog;
     bool m_isSameSpecies;
+
+    // Containers of the two species, used to get the index of the ionization level attribute
+    WarpXParticleContainer* m_species1 = nullptr;
+    WarpXParticleContainer* m_species2 = nullptr;
 
     Executor m_exe;
 

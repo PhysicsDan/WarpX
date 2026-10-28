@@ -52,6 +52,16 @@ add_warpx_test(
 )
 
 add_warpx_test(
+    test_2d_collision_xz_ionizable  # name
+    2  # dims
+    1  # nprocs
+    inputs_test_2d_collision_xz_ionizable  # inputs
+    "analysis_collision_2d_ionizable.py"  # analysis
+    OFF  # checksum
+    OFF  # dependency
+)
+
+add_warpx_test(
     test_2d_collision_xz_picmi  # name
     2  # dims
     1  # nprocs
