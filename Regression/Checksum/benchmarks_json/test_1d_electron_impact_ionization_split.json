@@ -1,0 +1,18 @@
+{
+  "carbon": {
+    "particle_ionizationLevel": 23476.0,
+    "particle_momentum_x": 1.6482878034217842e-20,
+    "particle_momentum_y": 1.6286841033200797e-20,
+    "particle_momentum_z": 1.6436954849355547e-20,
+    "particle_position_x": 0.004095999999999999,
+    "particle_weight": 9.999999999999998e+21
+  },
+  "ejected_electrons": {
+    "particle_momentum_x": 3.8234542687394215e-20,
+    "particle_momentum_y": 3.789010144684541e-20,
+    "particle_momentum_z": 2.5002923413318306e-20,
+    "particle_position_x": 0.011692670043945311,
+    "particle_weight": 2.865722656249999e+22
+  },
+  "lev=0": {}
+}

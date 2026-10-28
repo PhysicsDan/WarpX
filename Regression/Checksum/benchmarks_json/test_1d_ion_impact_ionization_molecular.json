@@ -1,0 +1,24 @@
+{
+  "electrons": {
+    "particle_momentum_x": 6.755737469209776e-21,
+    "particle_momentum_y": 6.74481334179781e-21,
+    "particle_momentum_z": 5.4167821739369834e-21,
+    "particle_position_x": 0.0025875146484375,
+    "particle_weight": 6.342773437499999e+21
+  },
+  "lev=0": {},
+  "nitrogen": {
+    "particle_momentum_x": 0.0,
+    "particle_momentum_y": 0.0,
+    "particle_momentum_z": 0.0,
+    "particle_position_x": 0.0015084853515625,
+    "particle_weight": 3.657226562499999e+21
+  },
+  "nitrogen_ions": {
+    "particle_momentum_x": 3.700043621707311e-21,
+    "particle_momentum_y": 3.653541348726911e-21,
+    "particle_momentum_z": 4.301285016961314e-21,
+    "particle_position_x": 0.0025875146484375,
+    "particle_weight": 6.342773437499999e+21
+  }
+}

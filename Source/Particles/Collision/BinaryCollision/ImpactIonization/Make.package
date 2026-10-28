@@ -1,0 +1,5 @@
+CEXE_sources += ImpactIonizationAtomicData.cpp
+CEXE_sources += ImpactIonizationCreationFunc.cpp
+CEXE_sources += ImpactIonizationFunc.cpp
+
+VPATH_LOCATIONS   += $(WARPX_HOME)/Source/Particles/Collision/BinaryCollision/ImpactIonization
