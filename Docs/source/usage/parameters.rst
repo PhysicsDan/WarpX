@@ -3132,6 +3132,11 @@ Details about the collision models can be found in the :ref:`theory section <mul
     - ``pairwisecoulomb`` for pair-wise Coulomb collisions, the default if unspecified.
       This provides a pair-wise relativistic elastic Monte Carlo binary Coulomb collision model,
       following the algorithm given by :cite:t:`param-PerezPOP2012`.
+      For a species with :pp:param:`<species_name>.do_field_ionization` set to ``1``, the charge of each
+      macroparticle is the elementary charge times its ionization level, both in the scattering of each pair
+      of macroparticles and in the Debye length (in particular, neutral atoms do not undergo Coulomb collisions).
+      Note that the global Debye length (see :pp:param:`<collision_name>.use_global_debye_length`) is
+      computed with the charge of the species instead, i.e. with an ionization level of 1.
       When the RZ mode is used, :pp:param:`warpx.n_rz_azimuthal_modes` must be set to 1 at the moment,
       since the current implementation of the collision module assumes axisymmetry.
     - ``nuclearfusion`` for fusion reactions.

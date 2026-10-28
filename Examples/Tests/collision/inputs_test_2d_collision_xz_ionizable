@@ -1,0 +1,154 @@
+# In this test, three identical cold beams of 100 eV electrons go through carbon ions at rest,
+# and their momentum decays by pairwise Coulomb collisions with the ions:
+# - electrons_ref collide with ions_ref, which do not have field ionization and have a charge 6 q_e
+# - electrons_ion collide with carbon6, which have field ionization and the ionization level 6
+# - electrons_neu collide with carbon0, which have field ionization and the ionization level 0
+# For a species with field ionization, the charge of each macroparticle in the Coulomb collisions
+# is q_e times its ionization level. In the analysis script, we check that the momentum of the
+# electrons decays at the expected momentum-transfer rate n_i Z^2 e^4 lnL / (4 pi eps0^2 m_e^2 v^3)
+# for the first two beams, and that the neutral atoms do not collide with the third beam.
+# Since the plasma is uniform and the fields are not evolved, the particles are not pushed.
+
+#################################
+########## CONSTANTS ############
+#################################
+
+my_constants.n_i = 1.e26            # ion density [m^-3]
+my_constants.Z = 6                  # charge state of the ions
+my_constants.E_beam = 100.          # beam kinetic energy [eV]
+my_constants.m_e_eV = m_e*clight**2/q_e
+my_constants.gamma_beam = 1. + E_beam/m_e_eV
+my_constants.gamma_beta_beam = sqrt(gamma_beam**2 - 1.)
+
+#################################
+####### GENERAL PARAMETERS ######
+#################################
+max_step = 60
+amr.n_cell = 8 8
+amr.max_grid_size = 8
+amr.max_level = 0
+geometry.dims = 2
+geometry.prob_lo = 0. 0.
+geometry.prob_hi = 0.8e-6 0.8e-6
+
+#################################
+###### Boundary Condition #######
+#################################
+boundary.field_lo = periodic periodic
+boundary.field_hi = periodic periodic
+boundary.particle_lo = periodic periodic
+boundary.particle_hi = periodic periodic
+
+#################################
+############ NUMERICS ###########
+#################################
+warpx.serialize_initial_conditions = 1
+warpx.verbose = 1
+warpx.const_dt = 0.5e-15
+warpx.use_filter = 0
+
+# Do not evolve the E and B fields
+algo.maxwell_solver = none
+
+# Order of particle shape factors
+algo.particle_shape = 1
+
+#################################
+############ PLASMA #############
+#################################
+particles.species_names = electrons_ref electrons_ion electrons_neu ions_ref carbon6 carbon0 ejected
+
+electrons_ref.species_type = electron
+electrons_ref.injection_style = "NUniformPerCell"
+electrons_ref.num_particles_per_cell_each_dim = 20 20
+electrons_ref.profile = constant
+electrons_ref.density = Z*n_i
+electrons_ref.momentum_distribution_type = constant
+electrons_ref.uz = gamma_beta_beam
+electrons_ref.do_not_deposit = 1
+electrons_ref.do_not_push = 1
+
+electrons_ion.species_type = electron
+electrons_ion.injection_style = "NUniformPerCell"
+electrons_ion.num_particles_per_cell_each_dim = 20 20
+electrons_ion.profile = constant
+electrons_ion.density = Z*n_i
+electrons_ion.momentum_distribution_type = constant
+electrons_ion.uz = gamma_beta_beam
+electrons_ion.do_not_deposit = 1
+electrons_ion.do_not_push = 1
+
+electrons_neu.species_type = electron
+electrons_neu.injection_style = "NUniformPerCell"
+electrons_neu.num_particles_per_cell_each_dim = 20 20
+electrons_neu.profile = constant
+electrons_neu.density = Z*n_i
+electrons_neu.momentum_distribution_type = constant
+electrons_neu.uz = gamma_beta_beam
+electrons_neu.do_not_deposit = 1
+electrons_neu.do_not_push = 1
+
+ions_ref.charge = Z*q_e
+ions_ref.mass = 12*m_u
+ions_ref.injection_style = "NUniformPerCell"
+ions_ref.num_particles_per_cell_each_dim = 10 10
+ions_ref.profile = constant
+ions_ref.density = n_i
+ions_ref.momentum_distribution_type = at_rest
+ions_ref.do_not_deposit = 1
+ions_ref.do_not_push = 1
+
+carbon6.species_type = carbon
+carbon6.injection_style = "NUniformPerCell"
+carbon6.num_particles_per_cell_each_dim = 10 10
+carbon6.profile = constant
+carbon6.density = n_i
+carbon6.momentum_distribution_type = at_rest
+carbon6.do_field_ionization = 1
+carbon6.physical_element = C
+carbon6.ionization_initial_level = 6
+carbon6.ionization_product_species = ejected
+carbon6.do_not_deposit = 1
+carbon6.do_not_push = 1
+
+carbon0.species_type = carbon
+carbon0.injection_style = "NUniformPerCell"
+carbon0.num_particles_per_cell_each_dim = 10 10
+carbon0.profile = constant
+carbon0.density = n_i
+carbon0.momentum_distribution_type = at_rest
+carbon0.do_field_ionization = 1
+carbon0.physical_element = C
+carbon0.ionization_initial_level = 0
+carbon0.ionization_product_species = ejected
+carbon0.do_not_deposit = 1
+carbon0.do_not_push = 1
+
+ejected.species_type = electron
+ejected.injection_style = none
+ejected.do_not_deposit = 1
+ejected.do_not_push = 1
+
+#################################
+############ COLLISION ##########
+#################################
+collisions.collision_names = coulomb_ref coulomb_ion coulomb_neu
+coulomb_ref.type = pairwisecoulomb
+coulomb_ref.species = electrons_ref ions_ref
+coulomb_ion.type = pairwisecoulomb
+coulomb_ion.species = electrons_ion carbon6
+coulomb_neu.type = pairwisecoulomb
+coulomb_neu.species = electrons_neu carbon0
+
+#################################
+########## DIAGNOSTICS ##########
+#################################
+diagnostics.diags_names = diag1
+diag1.intervals = 60
+diag1.diag_type = Full
+diag1.fields_to_plot = none
+
+warpx.reduced_diags_names = particle_momentum
+particle_momentum.type = ParticleMomentum
+particle_momentum.intervals = 1
+particle_momentum.precision = 18
