@@ -1,0 +1,18 @@
+{
+  "argon": {
+    "particle_ionizationLevel": 7077.0,
+    "particle_momentum_x": 4.590141168292661e-21,
+    "particle_momentum_y": 4.590405650950377e-21,
+    "particle_momentum_z": 7.39508706642365e-21,
+    "particle_position_x": 0.001024,
+    "particle_weight": 1e+20
+  },
+  "electrons": {
+    "particle_momentum_x": 1.3893276181660762e-20,
+    "particle_momentum_y": 1.358150894323912e-20,
+    "particle_momentum_z": 1.172407632152233e-20,
+    "particle_position_x": 0.0035287404785156245,
+    "particle_weight": 3.4555664062500005e+20
+  },
+  "lev=0": {}
+}

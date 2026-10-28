@@ -17,7 +17,10 @@
 # - the kinetic energy lost by the electrons and ions is equal to the binding energy of the ionized
 #   subshells plus the kinetic energy of the ejected electrons (on average),
 # - the kinetic energy of the ejected electrons agrees with the RBEB differential cross section,
-# - when the macroparticles are split, the total momentum of the particles is conserved.
+# - at each output step, the total charge is conserved exactly, the total kinetic energy decreases
+#   by the binding energy of the ionized subshells, and the total momentum is conserved: exactly
+#   when the macroparticles are split, and within the statistical bounds of the default method
+#   otherwise (in which energy and momentum are only conserved on average).
 
 import glob
 import os
@@ -173,8 +176,12 @@ for j in range(Z):
 N_initial = np.zeros(Z + 1)
 N_initial[0] = 1.0
 
-# Compare the populations of the charge states of carbon with the theory
+# Compare the populations of the charge states of carbon with the theory, and record at each
+# output step the number of ionization events from each charge state (number of ions with a
+# larger ionization level) and the charge of the ions [e] (the carbon atoms are initially neutral)
 plotfiles = sorted(glob.glob(os.path.join("diags", "diag1" + "[0-9]" * 6)))
+events_at_step = {0: np.zeros(Z)}
+ion_charge_at_step = {0: 0.0}
 for plotfile in plotfiles:
     step = int(plotfile[-6:])
     if step == 0:
@@ -198,6 +205,8 @@ for plotfile in plotfiles:
     print(f"  discrete-time model:                {N_discrete}")
     print(f"  solution of the rate equations:     {N_continuous}")
     assert np.all(np.abs(N_simulation - N_theory) < 5.0 * N_uncertainty + 1.0e-3)
+    events_at_step[step] = np.array([np.sum(ion_level > q) for q in range(Z)])
+    ion_charge_at_step[step] = np.sum(ion_weight * ion_level)
 
 # Read the reduced diagnostics, using the column names from their headers
 reduced_diags = {}
@@ -276,31 +285,115 @@ print(f"\nKinetic energy lost by the electrons and the ions: {energy_lost} [eV]"
 print(f"Expected: {expected_energy_lost} +/- {energy_lost_uncertainty} [eV] (1 sigma)")
 assert abs(energy_lost - expected_energy_lost) < 5.0 * energy_lost_uncertainty
 
-if split_macroparticles:
-    # Energy conservation: when the macroparticles are split, the total kinetic energy decreases
-    # exactly by the binding energy of the ionized subshell in each event
-    total_energy_change = (energy["total"][0] - energy["total"][-1]) / constants.e
-    expected_energy_change = w_i * np.sum(n_events * mean_B)
-    energy_change_uncertainty = w_i * np.sqrt(np.sum(n_events * var_B))
-    print(f"\nDecrease of the total kinetic energy: {total_energy_change} [eV]")
+# Conservation of the total charge, kinetic energy and momentum, at each output step:
+# - charge: the charge gained by the ions is that of the ejected electrons (exactly);
+# - energy: the total kinetic energy decreases by the binding energy B of the ionized subshell in
+#   each event, of weight w_i. When the macroparticles are split, this holds exactly for each
+#   event, but B is only known on average for each charge state (mean_B, var_B), which sets the
+#   uncertainty. With the default method, the energy change -(B + W) of the incident electron is
+#   applied to its macroparticle, of weight w_e, with the probability w_i/w_e, and the kinetic
+#   energy W' of the ejected electron is sampled independently of W, when the electron is created
+#   after the collisions: the energy change of an event, w_i W' - w_e X (B + W) (X = 1 with the
+#   probability w_i/w_e, 0 otherwise), is -w_i B on average, with the variance
+#   w_i^2 var(W) + w_e w_i <(B + W)^2> - w_i^2 <B + W>^2;
+# - momentum: when the macroparticles are split, it is conserved exactly in the rest frame of the
+#   ion of each event. In the lab frame, it is conserved up to the momentum of the ejected electrons
+#   when they were bound to the moving ions (since the mass of the ions does not change when they
+#   are ionized), which is of order m_e/m_C times the momentum gained by the ions through their
+#   recoil. (Without the recoil of the ions, the relative change of the total momentum would be of
+#   order 1e-3 in this test.) With the default method, the total momentum changes in each event by
+#   w_i (p' - p) + (w_e X - w_i) d, where d is the momentum change of the incident electron, p the
+#   momentum of the ejected electron used to compute d and the recoil of the ion, and p' that of the
+#   ejected electron created (sampled independently): zero on average, with the variance
+#   2 w_i^2 var(p) + (w_e w_i - w_i^2) d^2 for each component (checked at the last step).
+total_momentum = np.array(
+    [momentum["total_x"], momentum["total_y"], momentum["total_z"]]
+)
+initial_negative_charge = number["electrons_weight"][0]  # [e]
+mean_square_BW = var_BW + (mean_B + mean_W) ** 2
+print("\nConservation laws at each output step:")
+for k, step in enumerate(number["step"].astype(int)):
+    events = events_at_step[step]
+    total_charge = (
+        ion_charge_at_step[step]
+        - number["electrons_weight"][k]
+        - number["ejected_electrons_weight"][k]
+    )
+    charge_change = total_charge + initial_negative_charge
+    energy_change = (energy["total"][k] - energy["total"][0]) / constants.e
+    expected_energy_change = -w_i * np.sum(events * mean_B)
+    if split_macroparticles:
+        energy_variance = w_i**2 * np.sum(events * var_B)
+    else:
+        energy_variance = np.sum(
+            events
+            * (
+                w_i**2 * var_W
+                + w_e * w_i * mean_square_BW
+                - w_i**2 * (mean_B + mean_W) ** 2
+            )
+        )
+    energy_uncertainty = np.sqrt(energy_variance)
+    relative_momentum_change = np.linalg.norm(
+        total_momentum[:, k] - total_momentum[:, 0]
+    ) / np.linalg.norm(total_momentum[:, 0])
     print(
-        f"Expected: {expected_energy_change} +/- {energy_change_uncertainty} [eV] (1 sigma)"
+        f"  step {step:3d}: charge change {charge_change:.3e} e, kinetic energy change "
+        f"{energy_change:.6e} eV (expected {expected_energy_change:.6e} +/- "
+        f"{energy_uncertainty:.2e}), relative momentum change {relative_momentum_change:.2e}"
     )
-    assert (
-        abs(total_energy_change - expected_energy_change)
-        < 5.0 * energy_change_uncertainty
+    assert abs(charge_change) < 1.0e-12 * initial_negative_charge
+    assert abs(energy_change - expected_energy_change) <= 5.0 * energy_uncertainty + (
+        1.0e-12 * energy["total"][0] / constants.e
     )
+    if split_macroparticles:
+        assert relative_momentum_change < 2.0e-7
 
-    # Momentum conservation. The momentum is conserved exactly in the rest frame of the ion of
-    # each ionization event. In the lab frame, it is conserved up to the momentum of the ejected
-    # electrons when they were bound to the moving ions (since the mass of the ions does not change
-    # when they are ionized), which is of order m_e/m_C times the momentum gained by the ions
-    # through their recoil. (Without the recoil of the ions, the relative change of the total
-    # momentum would be of order 1e-3 in this test.)
-    total_momentum = np.array(
-        [momentum["total_x"], momentum["total_y"], momentum["total_z"]]
+if not split_macroparticles:
+    # The sum of d^2 over the events is estimated from the momentum changes of the beam electrons
+    # at the last step, whose sum of squares is (w_i/w_e) sum(d^2) (each event being applied with
+    # the probability w_i/w_e), and the sum of var(p) from the momenta of the ejected electrons
+    step = int(number["step"][-1])
+    ad = yt.load(os.path.join("diags", f"diag2{step:06d}")).all_data()
+    p_beam_initial = np.array(
+        [0.0, 0.0, constants.m_e * constants.c * np.sqrt((1.0 + tp) ** 2 - 1.0)]
     )
-    momentum_change = np.linalg.norm(total_momentum[:, -1] - total_momentum[:, 0])
-    relative_momentum_change = momentum_change / np.linalg.norm(total_momentum[:, 0])
-    print(f"\nRelative change of the total momentum: {relative_momentum_change}")
-    assert relative_momentum_change < 2.0e-7
+    sum_square_beam = np.array(
+        [
+            np.sum(
+                (ad["electrons", f"particle_momentum_{d}"].v - p_beam_initial[i]) ** 2
+            )
+            for i, d in enumerate("xyz")
+        ]
+    )
+    sum_square_ejected = np.array(
+        [
+            np.sum(
+                (
+                    ad["ejected_electrons", f"particle_momentum_{d}"].v
+                    - np.mean(ad["ejected_electrons", f"particle_momentum_{d}"].v)
+                )
+                ** 2
+            )
+            for d in "xyz"
+        ]
+    )
+    momentum_uncertainty = np.sqrt(
+        w_e * (w_e - w_i) * sum_square_beam + 2.0 * w_i**2 * sum_square_ejected
+    )
+    momentum_change = total_momentum[:, -1] - total_momentum[:, 0]
+    # Change of the total momentum if the momentum changes of the electrons were not applied
+    # (scale of the errors that the check detects)
+    unapplied = -w_e * np.array(
+        [
+            np.sum(ad["electrons", f"particle_momentum_{d}"].v - p_beam_initial[i])
+            for i, d in enumerate("xyz")
+        ]
+    )
+    print(f"\nChange of the total momentum at step {step}: {momentum_change} [kg m/s]")
+    print(f"Expected: 0 +/- {momentum_uncertainty} [kg m/s] (1 sigma)")
+    print(f"(change if the momentum of the electrons was not updated: {unapplied})")
+    assert np.all(
+        np.abs(momentum_change)
+        <= 5.0 * momentum_uncertainty + 1.0e-12 * np.linalg.norm(total_momentum[:, 0])
+    )

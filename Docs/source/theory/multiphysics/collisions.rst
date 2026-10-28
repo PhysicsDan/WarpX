@@ -272,8 +272,18 @@ In all cases, the cross section vanishes for :math:`E \leq B_s`.
 By default (``auto``), the MBELL model is used for :math:`Z \leq 18` and the Lotz model otherwise.
 Compared with the ionization rate coefficients recommended by :cite:t:`b-DereAA2007` for the elements from hydrogen to zinc
 in thermal plasmas, the MBELL model is the most accurate for :math:`Z \leq 18` (typically within 30%),
-the Lotz model is accurate for ions but overestimates the ionization of neutral atoms (typically by a factor up to 2),
-and the RBEB model with the approximations above underestimates the ionization of ions.
+the Lotz model is accurate for ions but overestimates the ionization of neutral atoms (by up to a factor of 3),
+and the RBEB model with the approximations above underestimates the ionization of ions (by up to a factor of 2.5 for
+temperatures below the ionization energy).
+For fast electrons, however, the RBEB model should be preferred: the cross sections of the MBELL fit increase too fast
+with the energy above about 10 keV (they are about 30% larger than those of RBEB at 1 MeV for H, He and C), such that the
+energy lost by fast electrons in ionization exceeds their total collisional stopping power (by 20% for H and 10% for Al at
+1 MeV).
+Note also that, with the approximation of the BEB model for the dipole oscillator strength, the RBEB cross sections follow
+at high energy the Bethe theory with the coefficient :math:`\sum_s N_s R/(2 B_s)` of :math:`\ln E`, which differs from the
+actual dipole matrix element for some atoms (0.5 instead of 0.283 for hydrogen): at equal velocities, the RBEB cross
+sections of H and Ne exceed the ion-impact cross sections (see below), which follow the measured Bethe coefficients, by
+40% to 50%, while those of He and Ar agree within 15%.
 
 Algorithm
 ^^^^^^^^^
@@ -302,14 +312,29 @@ Two methods are then available (see :pp:param:`<collision_name>.split_macroparti
   When the event is applied to the electron, its momentum is updated as described below.
   When it is applied to the ion, its ionization level is increased by one, its recoil momentum is applied,
   and an ejected electron with the weight :math:`w_i` is created at the position of the ion.
-  The charge is thus conserved exactly, and the energy and the momentum are conserved on average.
+  The charge is thus conserved exactly, and the energy and the momentum are conserved on average, even when the weights
+  are equal, since the ejected electrons are sampled after the collisions, independently of the electrons used to
+  compute the momentum changes of the colliding macroparticles.
+  (The energies of the electrons ejected when an ion is ionized several times by the same electron in one collision time
+  step are all sampled with the energy of the electron at the first event, which slightly overestimates them: in tests with
+  helium, the energy created was less than 1% of the energy lost by the electrons for :math:`R\Delta t` up to 2, where
+  :math:`R` is the ionization rate of the ions.)
   The number of macroparticles increases by one for each ionization of an ion macroparticle.
-  Since the successive events of a pair involve the same electron macroparticle, the probability that an ion is ionized several
-  times within one collision time step is computed with the energy of this electron, rather than with the average over the
-  electron distribution, which overestimates these successive ionizations for broad electron distributions when the
-  ionization rates depend strongly on the electron energy (for instance near the ionization thresholds).
-  (This effect is reduced when there are more electron macroparticles than ion macroparticles in the cells,
-  since each ion is then paired with several electrons in each collision time step.)
+  This method is exact for any collision time step for a given pair of macroparticles, e.g. for a monoenergetic electron beam
+  with as many electron as ion macroparticles.
+  However, each ion is paired with one electron macroparticle (or a few, when there are more electron than ion
+  macroparticles in the cell) per collision time step, and the velocity of this electron is used for the whole time step.
+  The probability of ionization of an ion in a collision time step is then the average of :math:`1 - \exp(-x)` over its
+  partners, rather than :math:`1 - \exp(-R\Delta t)`, which underestimates the ionization rate when :math:`R\Delta t` is not
+  small and :math:`x` varies between the partners: for a thermal electron distribution, the relative error is approximately
+  :math:`-(1 + C^2) R\Delta t/2`, where :math:`C` is the relative standard deviation of :math:`\sigma v` over the electron
+  distribution (e.g. -5% at :math:`R\Delta t = 0.05` and -50% at :math:`R\Delta t = 1` for C\ :sup:`0` at
+  :math:`T_e = I_0`, where most electrons cannot ionize, and -1% at :math:`R\Delta t = 0.2` for :math:`T_e = 10 I_0`).
+  When there are :math:`r` times more electron than ion macroparticles in the cells, each ion has :math:`r` partners per time
+  step, which improves the averaging when :math:`r` is an integer, but a non-integer :math:`r` gives some ions one more
+  partner than the others, which also underestimates the ionization rate (at :math:`R\Delta t = 1` and
+  :math:`T_e = 10 I_0`, the error is -8% for :math:`r = 1.5`, instead of -4% for :math:`r = 1` and less than 1% for
+  :math:`r = 3`). Such ratios also arise when the ejected electrons are added to the electron species.
   The results should therefore be checked for convergence with respect to the collision time step when the probability
   of ionization per collision time step is not small.
 
@@ -323,9 +348,17 @@ Two methods are then available (see :pp:param:`<collision_name>.split_macroparti
   three for each ionization event, and particle resampling may be needed in long simulations.
   Each pair undergoes at most one ionization event per collision time step, and the accuracy of this method therefore
   requires :math:`x \ll 1` for all pairs (note that :math:`x` includes the ratio :math:`w_{\max}/w_{\min}`,
-  and is therefore larger than the probability of ionization of the ions per time step when the weights differ).
+  and is therefore larger than the probability of ionization of the ions per time step when the weights differ:
+  for instance, for a dilute electron beam in a dense gas, :math:`x` is the probability of ionization per time step of
+  a beam electron, i.e. :math:`n_{gas}\sigma v \Delta t`).
 
 If needed, the collision time step can be reduced with :pp:param:`<collision_name>.ndt_subcycle`.
+
+When the ejected electrons are added to an electron species that undergoes Coulomb collisions (``pairwisecoulomb``),
+and their weight (that of the ion macroparticles) differs from the weight of the other electrons, it is recommended to set
+:pp:param:`collisions.correct_energy_momentum`, since the Coulomb collisions between macroparticles of different weights
+only conserve the energy on average (in a test of the ionization of carbon in a 50 eV plasma with a strong collisionality,
+the electron temperature was otherwise in error by about 5%).
 
 The kinematics of the ionization events are computed in the rest frame of the ion.
 The ionized subshell is selected with a probability proportional to its contribution to the cross section,
@@ -358,6 +391,179 @@ These are smaller than the kinetic energy and the momentum of the ion by a facto
 Finally, the relaxation of the ions after the ionization of an inner subshell (e.g. by Auger emission, which can
 ionize the ion further) is not modeled, and neither are recombination, excitation-autoionization and the lowering of the
 ionization energies in dense plasmas.
+
+.. _multiphysics-collisions-ion-impact-ionization:
+
+Ion-impact ionization
+---------------------
+
+The ``ion_impact_ionization`` collision type models the ionization of atoms, ions and molecules by collisions with
+fast ions, e.g. :math:`p + A^{q+} \rightarrow p + e^- + A^{(q+1)+}`, for instance when a beam of laser-accelerated
+protons travels through a gas or a plasma.
+The projectile can be any positively charged species without ionization level (protons, alpha particles,
+fully stripped ions), of charge :math:`Z_p e` and mass :math:`M`.
+The target can be:
+
+* atomic, i.e. an ion species with field ionization enabled, whose subshells are obtained as for electron-impact
+  ionization (see above). All the elements and charge states are supported, and successive ionizations are modeled.
+* molecular, i.e. a species without ionization level (e.g. :math:`\mathrm{N_2}`), which is ionized once into
+  another species (e.g. :math:`\mathrm{N_2^+}`). The binding energies and the occupations of its molecular orbitals
+  are given by the user (see :pp:param:`<collision_name>.binding_energies`), and its total ionization cross section
+  can be read from a file (see :pp:param:`<collision_name>.cross_section`).
+
+Model
+^^^^^
+
+The singly differential cross section of a subshell (or molecular orbital) with :math:`N` electrons of binding energy
+:math:`B`, differential in the kinetic energy :math:`W` of the ejected electron, is given by the semi-empirical model of
+:cite:t:`b-RuddRMP1992` (their Eqs. 37-48), which represents the experimental data of proton collisions with atoms and
+molecules from 5 keV to 5 MeV, and reproduces the asymptotic behavior of the Bethe theory at high energy:
+
+    .. math::
+
+        \frac{d\sigma}{dW} = Z_p^2 \frac{S}{B}\, \frac{F_1 + F_2 w}{(1+w)^3}\, \frac{1}{1 + \exp\left[\alpha (w - w_c)/v\right]}
+
+where :math:`w = W/B`, :math:`S = 4\pi a_0^2 N (R/B)^2` (with :math:`a_0` the Bohr radius and :math:`R` the Rydberg energy),
+:math:`v = \sqrt{T/B}` with :math:`T = m_e v_p^2/2` the kinetic energy of an electron with the velocity :math:`v_p` of the
+projectile, :math:`w_c = W_{\mathrm{free}}/B - 2v - R/(4B)` is the cutoff energy, with :math:`W_{\mathrm{free}}` the maximum
+energy transferred to a free electron at rest, and
+
+    .. math::
+
+        F_1 = L_1 + H_1, \quad F_2 = \frac{L_2 H_2}{L_2 + H_2}, \quad
+        L_1 = \frac{C_1 v^{D_1}}{1 + E_1 v^{D_1 + 4}}, \quad H_1 = \frac{A_1 \ln(1+v^2)}{v^2 + B_1/v^2}, \quad
+        L_2 = C_2 v^{D_2}, \quad H_2 = \frac{A_2}{v^2} + \frac{B_2}{v^4}
+
+The ten parameters :math:`A_1, \dots, D_2, \alpha` were determined by :cite:t:`b-RuddRMP1992` for the outer subshells of
+He, Ne, Ar, Kr and of several molecules, and a universal set of parameters was determined for the inner subshells, i.e. the
+subshells whose binding energy exceeds twice that of the least bound subshell.
+For an atomic target, the outer subshells of a charge state with :math:`N_e` bound electrons use by default
+(see :pp:param:`<collision_name>.rudd_parameters`):
+
+* for one-electron targets (H and hydrogen-like ions), for which no parameters were determined, the parameters of He, except
+  :math:`A_1 = 0.75` and :math:`A_2 = 1.2`.
+  At high velocity, the cross section is :math:`\sigma \approx (S/2v^2)\left[A_1 \ln(1+v^2) + A_2\right]`, and the cross
+  section for fast electrons (:math:`w \gg 1`) is :math:`A_2` times the Rutherford cross section.
+  :math:`A_2` was chosen close to 1, as for the targets of :cite:t:`b-RuddRMP1992`, and :math:`A_1` was then adjusted such
+  that the cross section of hydrogen agrees within 7% with the values recommended by :cite:t:`b-RuddRMP1985` from 50 keV
+  to 100 MeV (above 1.5 MeV, the highest energy of the recommended values, their fit formula follows the Bethe theory).
+  The values of the Bethe theory, :math:`A_1 = 2M^2 = 0.567` (where :math:`M^2 = 0.2834` is the dipole matrix element for the
+  ionization of hydrogen :cite:p:`b-InokutiRMP1971`) and :math:`A_2 \approx 2`, would reproduce the total cross section,
+  but with twice the Rutherford cross section for fast electrons, and an energy lost in ionization that exceeds the
+  stopping power.
+  Since the binding energy of hydrogen-like ions scales as :math:`Z^2`, their cross sections follow the scaling of the
+  Born approximation.
+* for the closed-shell configurations (:math:`N_e = 2, 10, 18, 36`), the parameters of the corresponding rare gas.
+* otherwise, the parameters of He for :math:`N_e < 10`, of Ar for :math:`10 < N_e < 18`, and of Kr for :math:`N_e > 18`.
+  (The parameters of Ne have a small dipole parameter :math:`A_1`, which was chosen as a compromise for the fit of the
+  data of neon, and would give for the atoms N and O a dipole matrix element smaller than half that of
+  :math:`\mathrm{N_2}` and :math:`\mathrm{O_2}`.)
+
+For a molecular target, the outer orbitals use the parameters of He by default.
+The parameters of :cite:t:`b-RuddRMP1992` for some common molecules are given in the table below (Tables I and V of
+:cite:t:`b-RuddRMP1992`), and can be used with :pp:param:`<collision_name>.binding_energies`,
+:pp:param:`<collision_name>.occupations` and :pp:param:`<collision_name>.rudd_parameters`.
+
+.. list-table:: Molecular orbitals and parameters of the Rudd model :cite:p:`b-RuddRMP1992`
+   :header-rows: 1
+
+   * - Molecule
+     - Binding energies [eV]
+     - Occupations
+     - Parameters :math:`A_1, B_1, C_1, D_1, E_1, A_2, B_2, C_2, D_2, \alpha`
+   * - :math:`\mathrm{H_2}`
+     - 15.43
+     - 2
+     - 0.96 2.6 0.38 0.23 2.2 1.04 5.9 1.15 0.20 0.87
+   * - :math:`\mathrm{N_2}`
+     - 15.59 16.96 18.78 37.3 409.9
+     - 2 4 2 2 4
+     - 1.05 12.0 0.74 -0.39 0.80 0.95 1.20 1.00 1.30 0.70
+   * - :math:`\mathrm{O_2}`
+     - 12.07 16.42 18.88 25.69 40.3 543.5
+     - 2 2 4 2 2 4
+     - 1.02 50 0.40 0.12 0.30 1.00 5.0 0.55 0 0.59
+   * - :math:`\mathrm{H_2O}`
+     - 12.61 14.73 18.55 32.2 539.7
+     - 2 2 2 2 2
+     - 0.97 82 0.40 -0.30 0.38 1.04 17.3 0.76 0.04 0.64
+   * - :math:`\mathrm{CO_2}`
+     - 13.79 17.60 18.08 19.4 37.0 38.6 297.5 541.0
+     - 4 4 2 2 2 2 2 4
+     - 1.09 25 0.75 0.75 0.65 0.78 3.0 0.70 0.85 0.53
+   * - :math:`\mathrm{CH_4}`
+     - 14.35 23 290.7
+     - 6 2 2
+     - 1.15 14 0.35 0.50 3.0 0.60 3.8 1.20 0.45 0.61
+
+The model is extended to relativistic projectiles in two ways: :math:`W_{\mathrm{free}}` is computed relativistically,
+:math:`W_{\mathrm{free}} = 2 m_e c^2 \beta^2\gamma^2/\left(1 + 2\gamma m_e/M + (m_e/M)^2\right)`
+(which is equal to :math:`4T` for slow projectiles), and the relativistic correction of the Bethe theory,
+:math:`\ln\gamma^2 - \beta^2` (see Eq. 22a of :cite:t:`b-RuddRMP1992`), is added to :math:`\ln(1+v^2)` in :math:`H_1`,
+which gives the relativistic rise of the cross sections (this correction is smaller than 1% below 100 MeV per nucleon).
+The factor :math:`Z_p^2` corresponds to the first Born approximation, which is accurate when the projectile is much faster
+than the bound electrons and :math:`Z_p` is small compared with :math:`v_p/v_0`, where :math:`v_0` is the Bohr velocity.
+The model does not include the capture of target electrons by the projectile, which dominates at low velocity but is
+negligible above about 0.5 MeV per nucleon, and, as for electron-impact ionization, the relaxation of the target after
+the ionization of an inner subshell and multiple ionization in a single collision are not modeled.
+The model is therefore intended for projectiles faster than about 0.5 MeV per nucleon.
+
+The cross section of each subshell, i.e. the integral of the differential cross section over :math:`0 \leq W \leq E - B`
+(where :math:`E` is the kinetic energy of the projectile in the rest frame of the target), is computed at initialization by
+numerical quadrature and tabulated as a function of :math:`\gamma\beta` of the projectile, from :math:`10^{-4}` to
+:math:`10^4` with 64 points per decade (the relative error of the interpolation is smaller than :math:`10^{-3}`, except
+for projectiles much slower than the bound electrons, i.e. :math:`T \ll B`, for which the cross sections are very small).
+For a molecular target with a total cross section read from a file, the cross sections of the model are only used to
+determine the relative contributions of the orbitals.
+
+With the binding energies of WarpX, the total cross sections of He, Ne, Ar and Kr agree within 7% with the values
+recommended by :cite:t:`b-RuddRMP1985` from 0.3 to 5 MeV, and that of H within 6% (and within 11% up to 1 GeV, compared
+with the Bethe form of their fit).
+The uncertainty is larger for the targets for which no parameters were determined: with the parameters of Kr, the cross
+section of Xe is 7% to 13% lower than the recommended values, and the cross sections of the atoms C, N and O are larger
+than half those of the molecules :math:`\mathrm{N_2}`, :math:`\mathrm{O_2}`, CO and :math:`\mathrm{CO_2}` by 10% to 50%
+(as expected for free atoms, whose valence electrons are less bound than in molecules, but this cannot be checked against
+measurements).
+With the parameters of the table above, the cross sections of :math:`\mathrm{H_2}` and :math:`\mathrm{N_2}` agree within 5%
+with the recommended values from 0.3 to 5 MeV, those of :math:`\mathrm{O_2}` and :math:`\mathrm{CO_2}` within 13%, and that of
+:math:`\mathrm{CH_4}` is 13% too low (for this molecule, the cross section should be read from a file).
+The energy lost by the projectiles in the ionization events (binding energy plus kinetic energy of the ejected electrons)
+represents 80% to 100% of the electronic stopping power of the Bethe theory for protons from 1 to 100 MeV in H,
+:math:`\mathrm{H_2}`, He, :math:`\mathrm{N_2}`, :math:`\mathrm{O_2}`, :math:`\mathrm{H_2O}` and Ar.
+The excitation of discrete levels, which is not modeled, accounts for the remainder of the stopping power (10% to 20%
+according to Sec. V.F of :cite:t:`b-RuddRMP1992`), so that the values close to 100% obtained at high energy with the
+parameters of :math:`\mathrm{O_2}`, :math:`\mathrm{H_2O}` and Ar indicate that the energy of the ejected electrons is
+overestimated by 10% to 20% in these cases.
+
+Algorithm
+^^^^^^^^^
+
+The pairing of the macroparticles, the computation of the probabilities and the two methods (with or without splitting
+the macroparticles) are the same as for electron-impact ionization (see above), with the ion projectiles in place of the
+electrons and the targets in place of the ions.
+When the macroparticles are not split and the target is molecular, the ionized target macroparticle is removed and replaced
+by a macroparticle of the product ion species, of the same weight, at the same position and with the same momentum
+(including its recoil); a molecular target can only be ionized once per collision time step.
+
+The kinematics of the ionization events are computed in the rest frame of the target.
+The ionized subshell is selected with a probability proportional to its contribution to the cross section,
+and the projectile loses the binding energy :math:`B` of this subshell plus the kinetic energy :math:`W` of the ejected
+electron, which is sampled from the differential cross section above by composition and rejection.
+Electrons sampled from the term :math:`F_2 w/(1+w)^3`, which contains the free-electron (Rutherford) limit of the cross
+section and dominates for fast electrons, are considered to result from close (binary) collisions, and are emitted at the
+angle given by the kinematics of a collision with a free electron at rest,
+
+    .. math::
+
+        \cos^2\theta = \frac{W\left(E + Mc^2 + m_ec^2\right)^2}{E\left(E + 2Mc^2\right)\left(W + 2m_ec^2\right)}
+
+with respect to the direction of the projectile (for slow projectiles, :math:`\cos^2\theta \approx W/W_{\mathrm{free}}`,
+i.e. the fast electrons are emitted in the forward direction), and the projectile is deflected such that the momentum of
+the projectile and of the ejected electron is conserved.
+The other electrons, which mostly result from distant (dipole) collisions and are slow, are emitted isotropically, and the
+projectile keeps its direction.
+In all cases, the target recoils such that the momentum is conserved, and its recoil energy is taken from the projectile,
+such that the total kinetic energy decreases exactly by :math:`B`.
 
 .. bibliography::
     :keyprefix: b-

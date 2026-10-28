@@ -204,10 +204,11 @@ AMREX_ENUM(ScatteringAngleModel,
            Default = Isotropic  /**< Isotropic */
 );
 
-/** \brief For electron-impact ionization, the model used to determine the kinetic energy of
- *  the ejected electron in the rest frame of the ion */
+/** \brief For electron-impact and ion-impact ionization, the model used to determine the kinetic
+ *  energy of the ejected electron in the rest frame of the target */
 AMREX_ENUM(EjectedElectronEnergyModel,
-           DifferentialCrossSection, /**< Sampled from the RBEB differential cross section */
+           DifferentialCrossSection, /**< Sampled from the differential cross section (RBEB model
+                                          for electron impact, Rudd model for ion impact) */
            AtRest,                   /**< The ejected electron is created at rest */
            Default = DifferentialCrossSection
 );

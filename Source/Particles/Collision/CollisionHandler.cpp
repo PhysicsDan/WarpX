@@ -16,8 +16,8 @@
 #include "Particles/Collision/BinaryCollision/Coulomb/PairWiseCoulombCollisionFunc.H"
 #include "Particles/Collision/BinaryCollision/DSMC/DSMCFunc.H"
 #include "Particles/Collision/BinaryCollision/DSMC/SplitAndScatterFunc.H"
-#include "Particles/Collision/BinaryCollision/ElectronImpactIonization/ElectronImpactIonizationCreationFunc.H"
-#include "Particles/Collision/BinaryCollision/ElectronImpactIonization/ElectronImpactIonizationFunc.H"
+#include "Particles/Collision/BinaryCollision/ImpactIonization/ImpactIonizationCreationFunc.H"
+#include "Particles/Collision/BinaryCollision/ImpactIonization/ImpactIonizationFunc.H"
 #include "Particles/Collision/BinaryCollision/NuclearFusion/NuclearFusionFunc.H"
 #include "Particles/Collision/BinaryCollision/LinearBreitWheeler/LinearBreitWheelerCollisionFunc.H"
 #include "Particles/Collision/BinaryCollision/LinearCompton/LinearComptonCollisionFunc.H"
@@ -81,10 +81,10 @@ CollisionHandler::CollisionHandler(MultiParticleContainer const * const mypc)
                     collision_names[i], mypc
                 );
         }
-        else if (type == "electron_impact_ionization") {
+        else if (type == "electron_impact_ionization" || type == "ion_impact_ionization") {
             allcollisions[i] =
-                std::make_unique<BinaryCollision<ElectronImpactIonizationFunc,
-                                                 ElectronImpactIonizationCreationFunc>>(
+                std::make_unique<BinaryCollision<ImpactIonizationFunc,
+                                                 ImpactIonizationCreationFunc>>(
                     collision_names[i], mypc
                 );
         }

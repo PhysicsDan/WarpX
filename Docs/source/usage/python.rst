@@ -237,6 +237,9 @@ Other operations related to particles:
 .. autopydantic_model:: pywarpx.picmi.ElectronImpactIonizationCollisions
     :inherited-members: BaseModel
 
+.. autopydantic_model:: pywarpx.picmi.IonImpactIonizationCollisions
+    :inherited-members: BaseModel
+
 .. autopydantic_model:: pywarpx.picmi.MCCCollisions
     :inherited-members: BaseModel
 

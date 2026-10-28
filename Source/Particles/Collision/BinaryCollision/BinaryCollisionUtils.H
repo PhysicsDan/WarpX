@@ -16,8 +16,6 @@
 #include <AMReX_Math.H>
 #include <AMReX_Vector.H>
 
-#include <array>
-
 enum struct CollisionType { DeuteriumTritiumToNeutronHeliumFusion,
                             DeuteriumDeuteriumToProtonTritiumFusion,
                             DeuteriumDeuteriumToNeutronHeliumFusion,
@@ -26,6 +24,7 @@ enum struct CollisionType { DeuteriumTritiumToNeutronHeliumFusion,
                             Bremsstrahlung,
                             DSMC,
                             ElectronImpactIonization,
+                            IonImpactIonization,
                             PairwiseCoulomb,
                             LinearBreitWheeler,
                             LinearCompton,
@@ -52,23 +51,54 @@ namespace BinaryCollisionUtils{
                                       MultiParticleContainer const * mypc);
 
     /**
-     * \brief For an ``electron_impact_ionization`` collision, return the names of the
-     * species involved, after checking that they are consistent with this collision type.
+     * \brief Species involved in an ``electron_impact_ionization`` or ``ion_impact_ionization``
+     * collision
+     */
+    struct ImpactIonizationSpecies
+    {
+        //! Species of the incident particles (electrons or ions)
+        std::string projectile;
+        //! Species of the particles that are ionized
+        std::string target;
+        //! Species of the ionized targets: the target species itself for an atomic target (whose
+        //! ionization level is increased), and another species for a molecular target
+        std::string product_ion;
+        //! Species of the ejected electrons
+        std::string product_electron;
+        //! Whether the projectiles are ions (``ion_impact_ionization``) or electrons
+        //! (``electron_impact_ionization``)
+        bool ion_projectile = false;
+        //! Whether the target species has an ionization level (atomic target, whose element is
+        //! given by ``physical_element``) or not (molecular target)
+        bool atomic_target = true;
+    };
+
+    /**
+     * \brief For an ``electron_impact_ionization`` or ``ion_impact_ionization`` collision,
+     * return the species involved, after checking that they are consistent with this collision
+     * type.
      *
-     * The two species in ``<collision_name>.species`` can be given in any order: one must be
-     * an electron species, and the other an ion species with ``do_field_ionization = 1``
-     * (which provides the ionization level of the ions and their element).
-     * The ejected electrons are added to ``<collision_name>.product_species`` if it is
-     * specified, and to the ``ionization_product_species`` of the ion species otherwise.
+     * An atomic target is an ion species with ``do_field_ionization = 1`` (which provides the
+     * ionization level of the ions and their element); the two species in
+     * ``<collision_name>.species`` can then be given in any order. For electron-impact
+     * ionization, the other species must be an electron species, and the target must be atomic.
+     * For ion-impact ionization, the other species (the projectile) must be a positively
+     * charged species without ionization level; if neither species has an ionization level, the
+     * target is molecular and must be the second species.
+     * For an atomic target, the ejected electrons are added to
+     * ``<collision_name>.product_species`` if it is specified, and to the
+     * ``ionization_product_species`` of the ion species otherwise. For a molecular target,
+     * ``<collision_name>.product_species`` must contain an electron species, for the ejected
+     * electrons, and an ion species of charge larger by one elementary charge than the target,
+     * for the ionized molecules (in any order).
      *
      * @param[in] collision_name the name of the collision
      * @param[in] mypc pointer to the MultiParticleContainer
-     * @return the names of the incident electron species, of the target ion species,
-     * and of the species to which the ejected electrons are added, in that order
+     * @return the species involved in the collision
      */
-    std::array<std::string, 3>
-    get_electron_impact_ionization_species (const std::string& collision_name,
-                                            MultiParticleContainer const * mypc);
+    ImpactIonizationSpecies
+    get_impact_ionization_species (const std::string& collision_name,
+                                   MultiParticleContainer const * mypc);
 
     /**
      * \brief Parse the list of scattering processes of a ``dsmc`` or ``background_mcc``

@@ -10,4 +10,4 @@ endforeach()
 
 add_subdirectory(DSMC)
 add_subdirectory(Bremsstrahlung)
-add_subdirectory(ElectronImpactIonization)
+add_subdirectory(ImpactIonization)

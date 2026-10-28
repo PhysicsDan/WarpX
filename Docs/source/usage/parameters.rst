@@ -2264,8 +2264,9 @@ Particle initialization
     :optional:
 
     Do field ionization for this species (using the ADK theory).
-    This must also be enabled for the ion species of an ``electron_impact_ionization`` collision
-    (see :pp:param:`<collision_name>.type`), which uses the ionization level and the
+    This must also be enabled for the ion species of an ``electron_impact_ionization`` collision,
+    and for the atomic target species of an ``ion_impact_ionization`` collision
+    (see :pp:param:`<collision_name>.type`), which use the ionization level and the
     physical element of the ions.
 
 .. pp:param:: <species_name>.do_adk_correction
@@ -3181,6 +3182,18 @@ Details about the collision models can be found in the :ref:`theory section <mul
       See :ref:`Electron-impact ionization section <multiphysics-collisions-electron-impact-ionization>`.
     - ``inverse_bremsstrahlung`` for inverse bremstrahlung absorption of photons from the collisions of electrons and ions.
       The absorbed energy and momentum from the photons is distributed among the electrons in the cell so that the quantities are exactly conserved.
+    - ``ion_impact_ionization`` for the ionization of atoms, ions or molecules by collisions with fast ions,
+      such as protons or alpha particles (the projectiles).
+      The cross sections and the energy distribution of the ejected electrons are given by the semi-empirical model
+      of :cite:t:`param-RuddRMP1992`, which is designed for projectiles faster than about 0.5 MeV per nucleon
+      (electron capture by the projectile, which dominates at low velocities, is not modeled),
+      and the ionization events are computed with the pair-wise algorithm of :cite:t:`param-HigginsonJCP2019`.
+      The target can be atomic, i.e. an ion species with :pp:param:`<species_name>.do_field_ionization` set to ``1``,
+      which defines its ionization level and its physical element (all the elements and charge states are supported),
+      or molecular, i.e. a species without ionization level, which is ionized once into another species,
+      and whose molecular orbitals are given by the user (see :pp:param:`<collision_name>.binding_energies`),
+      as well as, optionally, its total ionization cross section (see :pp:param:`<collision_name>.cross_section`).
+      See :ref:`Ion-impact ionization section <multiphysics-collisions-ion-impact-ionization>`.
     - ``linear_breit_wheeler`` for electron-positron pair creation from the annihilation of two photons, according to the linear Breit-Wheeler mechanism
       (see for example `Gould et al. (Phys. Rev. 155, 1404, 1967) <https://doi.org/10.1103/PhysRev.155.1404>`__).
       This implements the generation of electron-positron pairs based on the analytical cross-section, e.g.
@@ -3214,6 +3227,10 @@ Details about the collision models can be found in the :ref:`theory section <mul
     If using ``linear_compton``, these should be two species: first, a photon species, and second, a lepton species, in this exact order.
     If using ``electron_impact_ionization``, these should be two species, in any order: an electron species
     and an ion species with :pp:param:`<species_name>.do_field_ionization` set to ``1``.
+    If using ``ion_impact_ionization``, these should be two species: a positively charged ion species without
+    field ionization (the projectiles, e.g. protons, with a mass larger than 100 electron masses), and the target species. For an atomic target
+    (with :pp:param:`<species_name>.do_field_ionization` set to ``1``), they can be given in any order,
+    while for a molecular target, the projectile species must be given first.
     If using two-product ``nuclearfusion`` with ``scattering_angle_model = legendre``, consider the reaction to be ordered as ``A + B -> C + D``.
     The first entry in ``species`` must be the incident reactant ``A``, and the second must be the target reactant ``B``.
     The scattering angle is measured between the momenta of ``A`` and ``C`` in the center-of-momentum frame.
@@ -3222,13 +3239,18 @@ Details about the collision models can be found in the :ref:`theory section <mul
 .. pp:param:: <collision_name>.product_species
     :type: ``strings``
 
-    Only for ``dsmc``, ``linear_breit_wheeler``, ``nuclearfusion``, ``bremsstrahlung``, and ``electron_impact_ionization``.
+    Only for ``dsmc``, ``linear_breit_wheeler``, ``nuclearfusion``, ``bremsstrahlung``, ``electron_impact_ionization``, and ``ion_impact_ionization``.
     The name(s) of the species in which to add the new macroparticles created by the reaction.
     If using ``dsmc`` with ionization reactions, the first species in this list must be an electron.
     If using ``electron_impact_ionization``, this should be the electron species in which the ejected electrons are created
     (optional; by default, the :pp:param:`<species_name>.ionization_product_species` of the ion species).
     When the macroparticles are split (see :pp:param:`<collision_name>.split_macroparticles`), the scattered electrons
     and the ionized ions are added to the colliding electron and ion species, respectively.
+    If using ``ion_impact_ionization`` with an atomic target, this should be the electron species in which the ejected electrons
+    are created (optional; by default, the :pp:param:`<species_name>.ionization_product_species` of the target species).
+    With a molecular target, this should be two species, in any order: the electron species in which the ejected electrons
+    are created, and the species of the ionized molecules, whose charge must be larger than that of the target species
+    by one elementary charge. When the macroparticles are split, the scattered projectiles are added to the projectile species.
     If using ``dsmc`` with ``charge_exchange`` and ``two_product_reaction``, the order of the ``product_species`` should match the order of the species in :pp:param:`<collision_name>.species`.
     If using ``linear_breit_wheeler`` these should be two species: one of electrons and one of positrons.
     If using ``bremsstrahlung``, the product species must be of type photon.
@@ -3605,19 +3627,20 @@ Details about the collision models can be found in the :ref:`theory section <mul
     :default: 0
     :optional:
 
-    Only for ``electron_impact_ionization``. Whether the colliding macroparticles are split in each
-    ionization event.
+    Only for ``electron_impact_ionization`` and ``ion_impact_ionization``. Whether the colliding macroparticles
+    are split in each ionization event.
 
     - If ``0``, the macroparticles keep their weight: each ionization event of a pair of macroparticles
-      is applied to the electron and to the ion with probabilities that depend on the ratio of
-      their weights, and creates one ejected electron with the weight of the ion when the ion is ionized.
+      is applied to the projectile and to the target with probabilities that depend on the ratio of
+      their weights, and creates one ejected electron with the weight of the target when the target is ionized
+      (a molecular target macroparticle is then converted into a macroparticle of the product ion species).
       The energy and the momentum are conserved on average, several ionizations per collision step
       (and per pair of macroparticles) are possible, which allows large time steps between collisions
       (see :pp:param:`<collision_name>.ndt_supercycle`), and the number of macroparticles only
-      increases by one per ionization of an ion macroparticle.
+      increases by one per ionization of a target macroparticle.
     - If ``1``, each ionization event between two macroparticles of weights :math:`w_1` and :math:`w_2`
       subtracts the weight :math:`\min(w_1, w_2)` from both macroparticles, and creates three
-      macroparticles of that weight (the scattered electron, the ionized ion and the ejected electron).
+      macroparticles of that weight (the scattered projectile, the ionized target and the ejected electron).
       The energy and the momentum are then conserved exactly in each event, but each pair of macroparticles
       can undergo at most one ionization event per collision step, which requires that the probability
       of ionization per collision step be small, and the number of macroparticles (in particular with low weights)
@@ -3628,17 +3651,64 @@ Details about the collision models can be found in the :ref:`theory section <mul
     :default: ``differential_cross_section``
     :optional:
 
-    Only for ``electron_impact_ionization``. The model for the kinetic energy of the electrons
-    ejected by the ionization events, in the rest frame of the ions.
+    Only for ``electron_impact_ionization`` and ``ion_impact_ionization``. The model for the kinetic energy
+    of the electrons ejected by the ionization events, in the rest frame of the target.
     The possible values are ``differential_cross_section`` and ``at_rest``.
     With ``differential_cross_section``, the kinetic energy of the ejected electron is sampled
     from the singly differential cross section of the relativistic binary-encounter-Bethe model
-    :cite:p:`param-KimPRA2000`, and its direction is given by the kinematics of a collision with a
-    free electron (for close collisions) or is isotropic (for distant collisions).
-    With ``at_rest``, the ejected electrons are created at rest, and the incident electrons only
+    :cite:p:`param-KimPRA2000` (for ``electron_impact_ionization``) or of the Rudd model
+    :cite:p:`param-RuddRMP1992` (for ``ion_impact_ionization``), and its direction is given by the
+    kinematics of a collision with a free electron (for close collisions) or is isotropic (for distant collisions).
+    With ``at_rest``, the ejected electrons are created at rest, and the projectiles only
     lose the binding energy of the ionized subshell.
     See the :ref:`Electron-impact ionization section <multiphysics-collisions-electron-impact-ionization>`
-    for more details.
+    and the :ref:`Ion-impact ionization section <multiphysics-collisions-ion-impact-ionization>` for more details.
+
+.. pp:param:: <collision_name>.binding_energies
+    :type: ``floats``
+
+    Only for ``ion_impact_ionization`` with a molecular target (required). The binding energies of the
+    molecular orbitals of the target, in eV (the smallest one is the ionization energy of the molecule).
+    A single value (the ionization energy) can be given, in which case all the ionization events
+    are attributed to an orbital with this binding energy. The binding energy of the ionized orbital is lost
+    by the projectile, in addition to the kinetic energy of the ejected electron, whose distribution
+    depends on the binding energy. The values of :cite:t:`param-RuddRMP1992` for some common molecules are
+    given in the :ref:`Ion-impact ionization section <multiphysics-collisions-ion-impact-ionization>`.
+
+.. pp:param:: <collision_name>.occupations
+    :type: ``floats``
+
+    Only for ``ion_impact_ionization`` with a molecular target. The number of electrons in each molecular
+    orbital of :pp:param:`<collision_name>.binding_energies` (required if several binding energies are given).
+
+.. pp:param:: <collision_name>.cross_section
+    :type: ``string``
+    :optional:
+
+    Only for ``ion_impact_ionization`` with a molecular target. The path of a file containing the total
+    ionization cross section of the target by the projectiles, with the same format as the files of the
+    ``background_mcc`` and ``dsmc`` collisions: two columns, the kinetic energy of the projectile in eV
+    and the cross section in m\ :sup:`2`. Note that, unlike for ``dsmc``, the energy is the kinetic energy of the projectile
+    in the rest frame of the target (and not in the center-of-momentum frame), as usual for ion-atom collision data.
+    The cross section is interpolated linearly between the energies of the file, and is equal to its first (last) value
+    below (above) the range of energies of the file, which should therefore cover the energies of the projectiles.
+    The relative contributions of the molecular orbitals and the energy distribution of the ejected electrons are given
+    by the Rudd model. If this parameter is not specified, the total cross section is also given by the Rudd model.
+
+.. pp:param:: <collision_name>.rudd_parameters
+    :type: ``10 floats``
+    :optional:
+
+    Only for ``ion_impact_ionization``. The parameters :math:`A_1, B_1, C_1, D_1, E_1, A_2, B_2, C_2, D_2, \alpha`
+    of the Rudd model :cite:p:`param-RuddRMP1992` for the outer subshells of the target, i.e. the subshells whose
+    binding energy is smaller than twice that of the least bound subshell (the parameters of
+    :cite:t:`param-RuddRMP1992` for the inner subshells are always used for the other subshells).
+    By default, for an atomic target, the parameters of the rare gas with the same number of bound electrons are used for
+    the closed-shell configurations (helium-like, neon-like, argon-like and krypton-like ions), and otherwise the parameters
+    of helium, argon or krypton for the targets with less than 10, 11 to 18 and more than 18 electrons, respectively,
+    with modified parameters for the targets with one electron (see the
+    :ref:`Ion-impact ionization section <multiphysics-collisions-ion-impact-ionization>`).
+    For a molecular target, the parameters of helium are used by default.
 
 .. pp:param:: collisions.correct_energy_momentum
     :type: ``bool``

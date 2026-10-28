@@ -4,7 +4,7 @@
  *
  * License: BSD-3-Clause-LBNL
  */
-#include "ElectronImpactIonizationFunc.H"
+#include "ImpactIonizationFunc.H"
 
 #include "Particles/Collision/BinaryCollision/BinaryCollisionUtils.H"
 #include "Particles/MultiParticleContainer.H"
@@ -16,18 +16,17 @@
 
 #include <string>
 
-ElectronImpactIonizationFunc::ElectronImpactIonizationFunc (
+ImpactIonizationFunc::ImpactIonizationFunc (
     std::string const& collision_name, MultiParticleContainer const * const mypc,
     bool const isSameSpecies)
     : m_atomic_data(collision_name, mypc)
 {
     WARPX_ALWAYS_ASSERT_WITH_MESSAGE(!isSameSpecies,
-        "ElectronImpactIonizationFunc: the two colliding species must be different");
+        "ImpactIonizationFunc: the two colliding species must be different");
 
-    // The second species is the target ion species
-    auto const species_names =
-        BinaryCollisionUtils::get_electron_impact_ionization_species(collision_name, mypc);
-    m_ion_species = &mypc->GetParticleContainerFromName(species_names[1]);
+    auto const species = BinaryCollisionUtils::get_impact_ionization_species(collision_name, mypc);
+    m_target_species = &mypc->GetParticleContainerFromName(species.target);
+    m_exe.m_atomic_target = species.atomic_target;
 
     const amrex::ParmParse pp_collision_name(collision_name);
     pp_collision_name.query("split_macroparticles", m_exe.m_split_macroparticles);
