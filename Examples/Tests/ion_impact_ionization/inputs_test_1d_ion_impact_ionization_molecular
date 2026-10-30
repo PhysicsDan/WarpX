@@ -1,0 +1,133 @@
+# In this test, a uniform beam of 1 MeV protons goes through a gas of nitrogen molecules N2 of the
+# same density, which are ionized by proton impact into N2+ ions. The total ionization cross
+# section is read from the file N2_proton_ionization_cross_section.dat, which tabulates the
+# cross sections recommended by Rudd et al., Rev. Mod. Phys. 57, 965 (1985), as a function of the
+# kinetic energy of the protons, while the relative contributions of the molecular orbitals and
+# the energy of the ejected electrons are given by the Rudd model, with the binding energies and
+# the parameters of N2 of Rudd et al., Rev. Mod. Phys. 64, 441 (1992).
+# The macroparticles are split in each ionization event, so that the energy and the momentum are
+# conserved exactly. The proton and N2 macroparticles have the same weight, so that each event
+# converts a whole N2 macroparticle into an N2+ macroparticle.
+# In the analysis script, we check that the fraction of ionized molecules agrees with the cross
+# section of the file, that the charge, the energy and the momentum are conserved, and that the
+# energy of the ejected electrons agrees with the model.
+# Since the plasma is uniform and the fields are not evolved, the particles are not pushed.
+
+#################################
+########## CONSTANTS ############
+#################################
+
+my_constants.n_p = 1.e28            # beam density [m^-3]
+my_constants.n_i = 1.e28            # N2 density [m^-3]
+my_constants.E_beam = 1.e6          # beam kinetic energy [eV]
+my_constants.m_p_eV = m_p*clight**2/q_e
+my_constants.gamma_beam = 1. + E_beam/m_p_eV
+my_constants.gamma_beta_beam = sqrt(gamma_beam**2 - 1.)
+
+#################################
+####### GENERAL PARAMETERS ######
+#################################
+max_step = 50
+amr.n_cell = 32
+amr.max_grid_size = 32
+amr.max_level = 0
+geometry.dims = 1
+geometry.prob_lo = 0.
+geometry.prob_hi = 1.e-6
+
+#################################
+###### Boundary Condition #######
+#################################
+boundary.field_lo = periodic
+boundary.field_hi = periodic
+boundary.particle_lo = periodic
+boundary.particle_hi = periodic
+
+#################################
+############ NUMERICS ###########
+#################################
+warpx.serialize_initial_conditions = 1
+warpx.verbose = 1
+warpx.const_dt = 1.e-17
+warpx.use_filter = 0
+
+# Do not evolve the E and B fields
+algo.maxwell_solver = none
+
+# Order of particle shape factors
+algo.particle_shape = 1
+
+#################################
+############ PLASMA #############
+#################################
+particles.species_names = protons nitrogen nitrogen_ions electrons
+
+protons.species_type = proton
+protons.injection_style = "NUniformPerCell"
+protons.num_particles_per_cell_each_dim = 256
+protons.profile = constant
+protons.density = n_p
+protons.momentum_distribution_type = constant
+protons.uz = gamma_beta_beam
+protons.do_not_deposit = 1
+protons.do_not_push = 1
+
+nitrogen.charge = 0
+nitrogen.mass = 28*m_u
+nitrogen.injection_style = "NUniformPerCell"
+nitrogen.num_particles_per_cell_each_dim = 256
+nitrogen.profile = constant
+nitrogen.density = n_i
+nitrogen.momentum_distribution_type = at_rest
+nitrogen.do_not_deposit = 1
+nitrogen.do_not_push = 1
+
+nitrogen_ions.charge = q_e
+nitrogen_ions.mass = 28*m_u
+nitrogen_ions.injection_style = none
+nitrogen_ions.do_not_deposit = 1
+nitrogen_ions.do_not_push = 1
+
+electrons.species_type = electron
+electrons.injection_style = none
+electrons.do_not_deposit = 1
+electrons.do_not_push = 1
+
+#################################
+############ COLLISION ##########
+#################################
+collisions.collision_names = ionization
+ionization.type = ion_impact_ionization
+ionization.species = protons nitrogen
+ionization.product_species = nitrogen_ions electrons
+# (path relative to the directory in which the test is run, build/bin/<test_name>)
+ionization.cross_section = ../../../Examples/Tests/ion_impact_ionization/N2_proton_ionization_cross_section.dat
+# Binding energies [eV] and occupations of the molecular orbitals of N2, and parameters of the
+# Rudd model of N2, from Tables I(a) and V of Rudd et al., Rev. Mod. Phys. 64, 441 (1992)
+ionization.binding_energies = 15.59 16.96 18.78 37.3 409.9
+ionization.occupations = 2 4 2 2 4
+ionization.rudd_parameters = 1.05 12.0 0.74 -0.39 0.80 0.95 1.20 1.00 1.30 0.70
+ionization.split_macroparticles = 1
+
+#################################
+########## DIAGNOSTICS ##########
+#################################
+diagnostics.diags_names = diag1 diag2
+diag1.intervals = 10
+diag1.diag_type = Full
+diag1.fields_to_plot = none
+diag1.species = nitrogen nitrogen_ions electrons
+diag2.intervals = 50
+diag2.diag_type = Full
+diag2.fields_to_plot = none
+
+warpx.reduced_diags_names = particle_energy particle_momentum particle_number
+particle_energy.type = ParticleEnergy
+particle_energy.intervals = 10
+particle_energy.precision = 18
+particle_momentum.type = ParticleMomentum
+particle_momentum.intervals = 10
+particle_momentum.precision = 18
+particle_number.type = ParticleNumber
+particle_number.intervals = 10
+particle_number.precision = 18

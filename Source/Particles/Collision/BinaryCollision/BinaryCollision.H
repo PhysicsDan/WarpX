@@ -99,6 +99,19 @@ public:
 
         const CollisionType collision_type = BinaryCollisionUtils::get_collision_type(collision_name, mypc);
 
+        // For electron-impact and ion-impact ionization, the projectile species must be the
+        // first species and the target species the second one (for an atomic target, the two
+        // species can be given in any order in the input script).
+        bool const impact_ionization =
+            (collision_type == CollisionType::ElectronImpactIonization ||
+             collision_type == CollisionType::IonImpactIonization);
+        if (impact_ionization) {
+            auto const ionization_species =
+                BinaryCollisionUtils::get_impact_ionization_species(collision_name, mypc);
+            m_species_names[0] = ionization_species.projectile;
+            m_species_names[1] = ionization_species.target;
+        }
+
         m_isSameSpecies = (m_species_names[0] == m_species_names[1]);
 
         m_binary_collision_functor = CollisionFunctor(collision_name, mypc, m_isSameSpecies);
@@ -159,6 +172,19 @@ public:
             // (e.g., e- in e- + H -> 2 e- + H+) then it will be listed twice in `m_product_species`.
             // (e.g., m_product_species = [e-, H, e-, H+])
             // The code for ionization in `SplitAndScatterFunc` handles this case correctly.
+        }
+
+        // For electron-impact and ion-impact ionization, the colliding species are also product
+        // species: in each ionization event, the parts of the two colliding macroparticles that
+        // undergo the ionization are converted into new macroparticles.
+        // The product species are therefore, in that order: the projectile species, the species
+        // of the ionized targets (the target species itself for an atomic target) and the
+        // species of the ejected electrons (see `ImpactIonizationCreationFunc`).
+        if (impact_ionization) {
+            auto const ionization_species =
+                BinaryCollisionUtils::get_impact_ionization_species(collision_name, mypc);
+            m_product_species = {ionization_species.projectile, ionization_species.product_ion,
+                                 ionization_species.product_electron};
         }
         m_have_product_species = !m_product_species.empty();
 

@@ -204,6 +204,24 @@ AMREX_ENUM(ScatteringAngleModel,
            Default = Isotropic  /**< Isotropic */
 );
 
+/** \brief For electron-impact and ion-impact ionization, the model used to determine the kinetic
+ *  energy of the ejected electron in the rest frame of the target */
+AMREX_ENUM(EjectedElectronEnergyModel,
+           DifferentialCrossSection, /**< Sampled from the differential cross section (RBEB model
+                                          for electron impact, Rudd model for ion impact) */
+           AtRest,                   /**< The ejected electron is created at rest */
+           Default = DifferentialCrossSection
+);
+
+/** \brief For electron-impact ionization, the model used for the ionization cross sections */
+AMREX_ENUM(IonizationCrossSectionModel,
+           Auto,  /**< MBELL for atomic numbers up to 18, Lotz otherwise */
+           Lotz,  /**< Empirical formula of Lotz */
+           RBEB,  /**< Relativistic binary-encounter-Bethe model of Kim et al. */
+           MBELL, /**< Modified Bell model of Haque et al., for atomic numbers up to 18 */
+           Default = Auto
+);
+
 /** \brief Format of the Legendre coefficients used for anisotropic fusion angular distributions */
 AMREX_ENUM(
     FusionAngularDistributionCoefficientsFormat,

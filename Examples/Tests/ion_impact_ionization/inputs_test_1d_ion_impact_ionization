@@ -1,0 +1,121 @@
+# In this test, a uniform beam of 1 MeV protons goes through a gas of neutral argon atoms
+# 100 times less dense, which are progressively ionized by proton impact. The energy of the beam
+# remains nearly constant, and the ionization rate of argon ions in charge state j is
+# n_p * sigma_j * v_p, where the cross sections sigma_j are given by the Rudd model.
+# The macroparticles are not split (default), and the time step is chosen such that the ions are
+# often ionized several times per time step (the probability of ionization of neutral argon per
+# time step is about 0.6). The weight of the proton macroparticles is twice that of the argon
+# macroparticles.
+# In the analysis script, we check that the populations of the charge states of argon agree
+# with the solution of the ionization rate equations, that the charge is conserved, that the
+# energy lost by the protons and the energy of the ejected electrons agree with the model, and
+# that the fast ejected electrons are emitted at the angle of a binary collision.
+# Since the plasma is uniform and the fields are not evolved, the particles are not pushed.
+
+#################################
+########## CONSTANTS ############
+#################################
+
+my_constants.n_p = 1.e28            # beam density [m^-3]
+my_constants.n_i = 1.e26            # argon density [m^-3]
+my_constants.E_beam = 1.e6          # beam kinetic energy [eV]
+my_constants.m_p_eV = m_p*clight**2/q_e
+my_constants.gamma_beam = 1. + E_beam/m_p_eV
+my_constants.gamma_beta_beam = sqrt(gamma_beam**2 - 1.)
+
+#################################
+####### GENERAL PARAMETERS ######
+#################################
+max_step = 20
+amr.n_cell = 32
+amr.max_grid_size = 32
+amr.max_level = 0
+geometry.dims = 1
+geometry.prob_lo = 0.
+geometry.prob_hi = 1.e-6
+
+#################################
+###### Boundary Condition #######
+#################################
+boundary.field_lo = periodic
+boundary.field_hi = periodic
+boundary.particle_lo = periodic
+boundary.particle_hi = periodic
+
+#################################
+############ NUMERICS ###########
+#################################
+warpx.serialize_initial_conditions = 1
+warpx.verbose = 1
+warpx.const_dt = 3.e-16
+warpx.use_filter = 0
+
+# Do not evolve the E and B fields
+algo.maxwell_solver = none
+
+# Order of particle shape factors
+algo.particle_shape = 1
+
+#################################
+############ PLASMA #############
+#################################
+particles.species_names = protons argon electrons
+
+protons.species_type = proton
+protons.injection_style = "NUniformPerCell"
+protons.num_particles_per_cell_each_dim = 3200
+protons.profile = constant
+protons.density = n_p
+protons.momentum_distribution_type = constant
+protons.uz = gamma_beta_beam
+protons.do_not_deposit = 1
+protons.do_not_push = 1
+
+argon.species_type = argon
+argon.injection_style = "NUniformPerCell"
+argon.num_particles_per_cell_each_dim = 64
+argon.profile = constant
+argon.density = n_i
+argon.momentum_distribution_type = at_rest
+argon.do_field_ionization = 1
+argon.physical_element = Ar
+argon.ionization_initial_level = 0
+argon.ionization_product_species = electrons
+argon.do_not_deposit = 1
+argon.do_not_push = 1
+
+electrons.species_type = electron
+electrons.injection_style = none
+electrons.do_not_deposit = 1
+electrons.do_not_push = 1
+
+#################################
+############ COLLISION ##########
+#################################
+collisions.collision_names = ionization
+ionization.type = ion_impact_ionization
+ionization.species = protons argon
+ionization.product_species = electrons
+
+#################################
+########## DIAGNOSTICS ##########
+#################################
+diagnostics.diags_names = diag1 diag2
+diag1.intervals = 4
+diag1.diag_type = Full
+diag1.fields_to_plot = none
+diag1.species = argon electrons
+diag2.intervals = 20
+diag2.diag_type = Full
+diag2.fields_to_plot = none
+
+warpx.reduced_diags_names = particle_energy particle_momentum particle_number
+particle_energy.type = ParticleEnergy
+particle_energy.intervals = 4
+particle_energy.precision = 18
+particle_momentum.type = ParticleMomentum
+particle_momentum.intervals = 4
+particle_momentum.precision = 18
+particle_number.type = ParticleNumber
+particle_number.intervals = 4
+particle_number.precision = 18
